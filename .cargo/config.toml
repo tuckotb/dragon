@@ -1,0 +1,8 @@
+[target.aarch64-unknown-none]
+rustflags = [
+    "-C", "link-arg=-Lsrc/arch/aarch64",
+    "-C", "link-arg=-Tlinker.ld"
+]
+
+[build]
+target = "aarch64-unknown-none"

@@ -1,0 +1,17 @@
+[package]
+name = "misago"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+spin = "0.9"
+
+[features]
+default = ["qemu_virt"]
+qemu_virt = []
+
+[lints.rust]
+missing_docs = "deny" # Warns on missing documentation for PUBLIC items
+
+[lints.clippy]
+missing_docs_in_private_items = "deny" # Warns on missing documentation for PRIVATE items
