@@ -1,6 +1,12 @@
 //! Basic UART implementation
 use core::fmt::{self, Write};
-use crate::platform::uart::putchar;
+
+/// put a single char out
+pub fn putchar(c: u8) {
+    unsafe {
+        core::ptr::write_volatile(0x09000000 as *mut usize, c.into());
+    }
+}
 
 /// A struct that implements `core::fmt::Write` for macro support
 pub struct Uart;
@@ -28,7 +34,7 @@ pub fn _print(args: fmt::Arguments) {
 /// Kernel print! macro
 macro_rules! kprint {
     ($($arg:tt)*) => {
-        $crate::uart::_print(core::format_args!($($arg)*));
+        $crate::uart::_print(core::format_args!($($arg)*))
     };
 }
 
@@ -39,7 +45,7 @@ macro_rules! kprintln {
         $crate::kprint!("\n");
     };
     ($fmt:expr) => {
-        $crate::kprint!(concat!($fmt, "\n"));
+        $crate::kprint!(concat!($fmt, "\n"))
     };
     ($fmt:expr, $($arg:tt)*) => {
         $crate::kprint!(concat!($fmt, "\n"), $($arg)*);

@@ -1,14 +1,15 @@
 [package]
-name = "misago"
+name = "dragon"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 spin = "0.9"
+bitflags = "2.6"
 
 [features]
-default = ["qemu_virt"]
-qemu_virt = []
+default = ["aarch64"]
+aarch64 = []
 
 [lints.rust]
 missing_docs = "deny" # Warns on missing documentation for PUBLIC items

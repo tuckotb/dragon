@@ -1,6 +1,15 @@
 // from freedomtan/aarch64-bare-metal-qemu */
 .global _Reset
+.data
+    FDT_POINTER: .quad 0
+.global FDT_POINTER
+.macro str_l, src, sym, tmp
+adrp \tmp, \sym
+str \src, [\tmp, :lo12:\sym]
+.endm
+
 _Reset:
+    mov x19, x0
     ldr x30, =stack_top	// setup stack
     mov sp, x30
 
@@ -26,7 +35,7 @@ _Reset:
     orr x0, x0, #(3 << 20)  // Set bits [21:20] to 0b11 (Trap no FP/SIMD access)
     msr cpacr_el1, x0
     isb
-
+    str_l x19, FDT_POINTER, x0
     /* .bss is cleared, proceed to your main application */
     bl kmain
     b .

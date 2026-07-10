@@ -1,13 +1,11 @@
 //! An ARM rich microkernel 
 #![no_std]
 #![no_main]
-#![deny(dead_code)]
 
 extern crate alloc;
 
 mod arch;
 mod malloc;
-mod platform;
 mod scheduler;
 mod uart;
 
@@ -17,8 +15,7 @@ use core::{
 };
 
 use crate::{
-    arch::aarch64::vector::init_exceptions,
-    malloc::LockedHeap,
+    arch::karch_init, malloc::LockedHeap,
 };
 
 global_asm!(include_str!("arch/aarch64/boot.S"));
@@ -38,8 +35,7 @@ unsafe extern "C" {
 /// Kernel entry point
 pub extern "C" fn kmain() -> ! {
     unsafe {
-        init_exceptions();
-
+        karch_init();
         let program_end = core::ptr::addr_of!(_end) as usize;
         let heap_start = (program_end + 7) & !7;
         let heap_size = 16 * 1024 * 1024;
@@ -51,11 +47,16 @@ pub extern "C" fn kmain() -> ! {
     }
 }
 
+/// Secondary core entry
+fn ksecond_entry() {
+
+}
+
 #[panic_handler]
 /// Kernel panic handler
 /// Prints the panic info and loops in `wfi`
 fn panic(info: &PanicInfo) -> ! {
-    kprintln!("PANIC:\n\n{}", info);
+    kprintln!("PANIC:\n{}", info);
     loop {
         unsafe {
             core::arch::asm!("wfi");

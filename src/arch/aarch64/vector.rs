@@ -1,7 +1,7 @@
 //! Setup an aarch64 vector table
 use core::arch::global_asm;
 
-use crate::kprintln;
+use crate::{arch::aarch64::{trapframe::{self, TrapFrame}}, kprintln};
 
 global_asm!(
     r#"
@@ -86,7 +86,7 @@ macro_rules! vector_stub {
     stp x9, x10,  [sp, #16 * 16]
 
     // Pass the current stack pointer to Rust (this is the saved context)
-    mov x0, sp
+    mov x0, sp  
     bl "#, stringify!($handler), r#"
 
     // =======================================================
@@ -162,8 +162,23 @@ extern "C" fn handle_sync(_ctx: *mut u64) {
 
 #[unsafe(no_mangle)]
 /// Handles IRQ
-extern "C" fn handle_irq(_ctx: *mut u64) {
-    kprintln!("IRQ fired");
+extern "C" fn handle_irq(ctx: *mut TrapFrame)
+//  -> *mut TrapFrame 
+ {
+    kprintln!("irq");
+    // let iar = unsafe { core::ptr::read_volatile((GICC_BASE + 0x00C) as *const u32) };
+    // let irq_id = iar & 0x3FF;
+
+    // let next = if irq_id == TIMER_IRQ {
+    //     kprintln!("timer fired");
+    //     //unsafe { reload_timer(10) }; // rearm for next 10ms
+    //     ctx
+    // } else {
+    //     ctx
+    // };
+
+    // unsafe { core::ptr::write_volatile((GICC_BASE + 0x010) as *mut u32, iar) }; // EOI
+    // next
 }
 
 #[unsafe(no_mangle)]
