@@ -16,5 +16,6 @@ unsafe extern "C" {
 
 /// architecture specific initialization
 pub unsafe fn karch_init() {
-    fdt::FDT::new(FDT_POINTER as usize); // risky to convert to usize but we know we are on 64bit
+    let mut fdt = fdt::FDT::new(FDT_POINTER as usize); // risky to convert to usize but we know we are on 64bit
+    fdt.find_node("/memory").unwrap();
 }

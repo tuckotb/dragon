@@ -59,13 +59,18 @@ pub struct FDT {
     /// str offset
     str_offset: usize,
     /// fdt header
-    header: Option<FDTHeader>
+    header: Option<FDTHeader>,
 }
 
 impl FDT {
     /// Parse the FDT
     pub fn new(base: usize) -> Self {
-        let mut fdt = Self { base, str_offset: 0, offset: base, header: None };
+        let mut fdt = Self {
+            base,
+            str_offset: 0,
+            offset: base,
+            header: None,
+        };
         let magic = fdt.read_u32();
 
         let header = FDTHeader {
@@ -86,19 +91,50 @@ impl FDT {
     }
 
     /// Find a certain node in the device tree
-    /// Input for the [`look_for`] parameter is around the lines of "/memory"
-    pub fn find_node(&mut self, look_for: &str) -> Result<*mut usize, ()> {
+    /// Input for the [`look_for`] parameter is a URI-type thing
+    pub fn find_node(&mut self, look_for: &str) -> Result<usize, ()> {
         self.offset = self.base + self.header.as_mut().unwrap().off_dt_struct as usize;
+        let target_depth = look_for.split('/').count();
+        let mut current_depth: usize = 0;
+        let mut matched_depth: usize = 0;
         loop {
             let token = self.read_u32();
-
             match token {
                 0x1 => {
-                    level += 1;
+                    let name = self.read_nullterm_string();
+                    if current_depth == matched_depth
+                        && let Some(target_segment) = look_for
+                            .split('/')
+                            .nth(matched_depth)
+                    {
+                        let name_no_addr = name.split('@').next().unwrap_or(name);
+
+                        if name_no_addr == target_segment || name == target_segment {
+                            matched_depth += 1; // We matched a step!
+
+                            if matched_depth == target_depth {
+                                kprintln!("FOUND at offset 0x{:X}", self.offset);
+                                return Ok(self.offset);
+                            }
+                        }
+                    }
+                    current_depth += 1;
                 }
-                0x2 => {}
+                0x2 => {
+                    if current_depth == 0 {
+                        kprintln!("hm");
+                        break;
+                    }
+                    current_depth -= 1;
+
+                    if matched_depth > current_depth {
+                        matched_depth = current_depth;
+                    }
+                }
                 0x3 => {
-                    let l = self.read_u32(); self.read_u32(); self.read_string(l); // jump forward, we dont care about prop
+                    let l = self.read_u32();
+                    self.read_u32();
+                    self.read_string(l); // jump forward, we dont care about prop
                 }
                 0x4 => {}
                 0x9 => break,
@@ -110,14 +146,16 @@ impl FDT {
         Err(())
     }
 
+    /// grab the property as a pointer
+    pub fn grab_property(&mut self, offset: usize) {
+
+    }
+
     /// grab string from strings table
     pub fn grab_string(&mut self, offset: u32) -> &str {
         let ptr = (self.str_offset + offset as usize) as *const c_char;
 
-        unsafe {
-            CStr::from_ptr(ptr)
-                .to_str()
-                .unwrap()}
+        unsafe { CStr::from_ptr(ptr).to_str().unwrap() }
     }
 
     /// read a string with a length as utf-8
