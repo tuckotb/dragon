@@ -2,9 +2,9 @@
 
 use spin::Mutex;
 
-use crate::{arch::aarch64::{dtb::FDT, vector::init_exceptions}, kprintln};
+use crate::{arch::aarch64::{fdt::FDT, vector::init_exceptions}, kprintln};
 
-pub mod dtb;
+pub mod fdt;
 pub mod gic;
 pub mod timer;
 pub mod trapframe;
@@ -16,5 +16,5 @@ unsafe extern "C" {
 
 /// architecture specific initialization
 pub unsafe fn karch_init() {
-    dtb::FDT::new(FDT_POINTER);
+    fdt::FDT::new(FDT_POINTER as usize); // risky to convert to usize but we know we are on 64bit
 }

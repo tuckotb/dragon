@@ -1,4 +1,5 @@
-//! support for flattened device tree reading
+//! An architecture-independent Flattened Device Tree (FDT) reader
+//! All memory locations are standerdized to `usize`
 
 use core::ffi::{CStr, c_char};
 
@@ -34,9 +35,9 @@ pub struct FDTHeader {
 /// Each pair gives the physical address and size in bytes of a reserved memory region.
 pub struct FDTReserveEntry {
     /// address of reserved region
-    address: u64,
+    address: usize,
     /// size of reserved region
-    size: u64,
+    size: usize,
 }
 
 #[derive(Debug)]
@@ -51,18 +52,24 @@ pub struct FDTProp {
 
 /// FDT Reader
 pub struct FDT {
+    /// base of fdt
+    base: usize,
     /// offset
-    offset: u64,
+    offset: usize,
     /// str offset
-    str_offset: u64
+    str_offset: usize,
+    /// fdt header
+    header: Option<FDTHeader>
 }
 
 impl FDT {
     /// Parse the FDT
-    pub fn new(base: u64) -> Self {
-        let mut fdt = Self { str_offset: 0, offset: base };
-        let header: FDTHeader = FDTHeader {
-            magic: fdt.read_u32(),
+    pub fn new(base: usize) -> Self {
+        let mut fdt = Self { base, str_offset: 0, offset: base, header: None };
+        let magic = fdt.read_u32();
+
+        let header = FDTHeader {
+            magic,
             totalsize: fdt.read_u32(),
             off_dt_struct: fdt.read_u32(),
             off_dt_strings: fdt.read_u32(),
@@ -73,36 +80,25 @@ impl FDT {
             size_dt_strings: fdt.read_u32(),
             size_dt_struct: fdt.read_u32(),
         };
-        fdt.offset = base + header.off_dt_struct as u64;
-        fdt.str_offset = header.off_dt_strings as u64;
+        fdt.str_offset = header.off_dt_strings as usize;
+        fdt.header = Some(header);
+        fdt
+    }
+
+    /// Find a certain node in the device tree
+    /// Input for the [`look_for`] parameter is around the lines of "/memory"
+    pub fn find_node(&mut self, look_for: &str) -> Result<*mut usize, ()> {
+        self.offset = self.base + self.header.as_mut().unwrap().off_dt_struct as usize;
         loop {
-            let token = fdt.read_u32();
+            let token = self.read_u32();
+
             match token {
                 0x1 => {
-                    kprintln!("NODE: {}", fdt.read_nullterm_string());
+                    level += 1;
                 }
                 0x2 => {}
                 0x3 => {
-                    let prop_header: FDTProp = FDTProp {
-                        length: fdt.read_u32(),
-                        name_offset: fdt.read_u32(),
-                    };
-                    {
-                        let value = fdt.grab_string(prop_header.name_offset);
-                        kprint!("prop `{}`: ", value);
-                    }
-                    let property = fdt.read_string(prop_header.length);
-                    kprint!("`");
-                    match core::str::from_utf8(property) {
-                        Ok(s) => {kprint!("{}", s);}
-                        Err(b) => {
-                            for x in property {
-                                kprint!("{:x} ", x);
-                            }
-                        }
-                    }
-                    kprint!("`");
-                    kprintln!();
+                    let l = self.read_u32(); self.read_u32(); self.read_string(l); // jump forward, we dont care about prop
                 }
                 0x4 => {}
                 0x9 => break,
@@ -111,12 +107,12 @@ impl FDT {
                 }
             }
         }
-        fdt
+        Err(())
     }
 
     /// grab string from strings table
     pub fn grab_string(&mut self, offset: u32) -> &str {
-        let ptr = (self.str_offset + offset as u64) as *const c_char;
+        let ptr = (self.str_offset + offset as usize) as *const c_char;
 
         unsafe {
             CStr::from_ptr(ptr)
@@ -129,7 +125,7 @@ impl FDT {
         unsafe {
             let byte_slice: &[u8] =
                 core::slice::from_raw_parts(self.offset as *mut u8, len as usize);
-            self.offset += len as u64;
+            self.offset += len as usize;
             self.align();
             byte_slice
         }
@@ -139,7 +135,7 @@ impl FDT {
     pub fn read_nullterm_string(&mut self) -> &str {
         let c_str = unsafe { CStr::from_ptr(self.offset as *mut c_char) };
         let len = c_str.to_bytes().len();
-        self.offset += len as u64;
+        self.offset += len as usize;
         self.offset += 1;
         self.align();
         c_str.to_str().unwrap()
@@ -153,7 +149,7 @@ impl FDT {
     /// Read a u32 as little endian and return and increment offset
     pub fn read_u32(&mut self) -> u32 {
         let value: u32 = unsafe { core::ptr::read_volatile(self.offset as *mut u32).to_be() };
-        self.offset += size_of::<u32>() as u64;
+        self.offset += size_of::<u32>() as usize;
         value
     }
 }
