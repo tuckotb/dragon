@@ -2,6 +2,7 @@
 #![no_std]
 #![no_main]
 #![allow(unsafe_op_in_unsafe_fn)]
+#![feature(never_type)]
 
 extern crate alloc;
 
@@ -9,6 +10,7 @@ mod arch;
 mod malloc;
 mod scheduler;
 mod uart;
+mod error;
 
 use core::{
     arch::global_asm,
@@ -16,7 +18,7 @@ use core::{
 };
 
 use crate::{
-    arch::karch_init, malloc::LockedHeap,
+    arch::karch_init, error::KernelError, malloc::LockedHeap,
 };
 
 global_asm!(include_str!("arch/aarch64/boot.S"));
@@ -36,7 +38,7 @@ unsafe extern "C" {
 /// Kernel entry point
 pub extern "C" fn kmain() -> ! {
     unsafe {
-        karch_init();
+        karch_init().unwrap();
         let program_end = core::ptr::addr_of!(_end) as usize;
         let heap_start = (program_end + 7) & !7;
         let heap_size = 16 * 1024 * 1024;

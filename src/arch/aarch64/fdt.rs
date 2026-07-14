@@ -1,9 +1,33 @@
 //! An architecture-independent Flattened Device Tree (FDT) reader
 //! All memory locations are standerdized to `usize`
 
+use thiserror::Error;
 use core::ffi::{CStr, c_char};
-
 use crate::{kprint, kprintln};
+
+/// FDT error Result<T> type
+type Result<T> = core::result::Result<T, FDTError>;
+
+#[derive(Error, Debug)]
+/// FDT error enum
+pub enum FDTError {
+
+    #[error("FDT Magic of {0} was incorrect")]
+    /// Header magic was wrong
+    IncorrectMagic(u32),
+
+    #[error("Could not find FDT node")]
+    /// FDT node didnt exist on lookup
+    NoNode,
+
+    #[error("Invalid UTF-8 string: {0}")]
+    /// FDT string error
+    UTF8StringError(#[from] core::str::Utf8Error),
+    
+    #[error("Error looking up FDT Property")]
+    /// FDT prop lookup error
+    PropLookupError,
+}
 
 #[derive(Debug)]
 #[repr(C)]
@@ -64,14 +88,18 @@ pub struct FDT {
 
 impl FDT {
     /// Parse the FDT
-    pub fn new(base: usize) -> Self {
+    pub fn new(base: usize) -> Result<Self> {
         let mut fdt = Self {
             base,
             str_offset: 0,
             offset: base,
             header: None,
         };
+
         let magic = fdt.read_u32();
+        if !(magic == 0xd00dfeed) {
+            return Err(FDTError::IncorrectMagic(magic));
+        }
 
         let header = FDTHeader {
             magic,
@@ -85,14 +113,15 @@ impl FDT {
             size_dt_strings: fdt.read_u32(),
             size_dt_struct: fdt.read_u32(),
         };
+
         fdt.str_offset = header.off_dt_strings as usize;
         fdt.header = Some(header);
-        fdt
+        Ok(fdt)
     }
 
     /// Find a certain node in the device tree
     /// Input for the [`look_for`] parameter is a URI-type thing
-    pub fn find_node(&mut self, look_for: &str) -> Result<usize, ()> {
+    pub fn find_node(&mut self, look_for: &str) -> Result<usize> {
         self.offset = self.base + self.header.as_mut().unwrap().off_dt_struct as usize;
         let target_depth = look_for.split('/').count();
         let mut current_depth: usize = 0;
@@ -101,7 +130,7 @@ impl FDT {
             let token = self.read_u32();
             match token {
                 0x1 => {
-                    let name = self.read_nullterm_string();
+                    let name = self.read_nullterm_string()?;
                     if current_depth == matched_depth
                         && let Some(target_segment) = look_for
                             .split('/')
@@ -113,7 +142,6 @@ impl FDT {
                             matched_depth += 1; // We matched a step!
 
                             if matched_depth == target_depth {
-                                kprintln!("FOUND at offset 0x{:X}", self.offset);
                                 return Ok(self.offset);
                             }
                         }
@@ -138,24 +166,58 @@ impl FDT {
                 }
                 0x4 => {}
                 0x9 => break,
-                _ => {
-                    panic!("Invalid FDT lexical token of 0x{:X}", token);
-                }
+                _ => { todo!("error here"); }
             }
         }
-        Err(())
+        Err(FDTError::NoNode)
     }
 
     /// grab the property as a pointer
-    pub fn grab_property(&mut self, offset: usize) {
+    pub fn grab_property(&mut self, offset: usize, name: &str) -> Result<*mut u8> {
+        self.offset = offset;
+        loop {
+            let token = self.read_u32();
+            match token {
+                0x1 => {
+                    return Err(FDTError::PropLookupError);
+                },
+                0x2 => {
+                    return Err(FDTError::PropLookupError);
+                },
+                0x3 => {
+                    let prop_header: FDTProp = FDTProp {
+                        length: self.read_u32(),
+                        name_offset: self.read_u32(),
+                    };
+                    let prop_name = self.grab_string(prop_header.name_offset)?;
+                    if prop_name == name {
+                        return Ok(self.offset as *mut u8);
+                    }
+                },
+                0x4 => {},
+                0x9 => break, // this should never occur here
+                _ => { todo!("error here"); }
+            }
+        }
 
+        Err(FDTError::PropLookupError)
     }
 
     /// grab string from strings table
-    pub fn grab_string(&mut self, offset: u32) -> &str {
+    pub fn grab_string(&mut self, offset: u32) -> Result<&str> {
         let ptr = (self.str_offset + offset as usize) as *const c_char;
 
-        unsafe { CStr::from_ptr(ptr).to_str().unwrap() }
+        unsafe { Ok(CStr::from_ptr(ptr).to_str()?) }
+    }
+
+    /// read a null terminated string
+    pub fn read_nullterm_string(&mut self) -> Result<&str> {
+        let c_str = unsafe { CStr::from_ptr(self.offset as *mut c_char) };
+        let len = c_str.to_bytes().len();
+        self.offset += len as usize;
+        self.offset += 1;
+        self.align();
+        Ok(c_str.to_str()?)
     }
 
     /// read a string with a length as utf-8
@@ -167,16 +229,6 @@ impl FDT {
             self.align();
             byte_slice
         }
-    }
-
-    /// read a null terminated string
-    pub fn read_nullterm_string(&mut self) -> &str {
-        let c_str = unsafe { CStr::from_ptr(self.offset as *mut c_char) };
-        let len = c_str.to_bytes().len();
-        self.offset += len as usize;
-        self.offset += 1;
-        self.align();
-        c_str.to_str().unwrap()
     }
 
     /// align
@@ -191,3 +243,4 @@ impl FDT {
         value
     }
 }
+
