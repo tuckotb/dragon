@@ -10,7 +10,7 @@ clean:
 
 run:
 	qemu-system-aarch64 \
-    -M virt \
+    -M virt,dumpdtb=qemu.dtb \
     -cpu cortex-a57 \
 	-smp 4 \
 	-m 4G \

@@ -8,6 +8,11 @@ use crate::{kprint, kprintln};
 /// FDT error Result<T> type
 type Result<T> = core::result::Result<T, FDTError>;
 
+/// An FDT node
+pub struct FDTNode(pub usize);
+/// An FDT property alongside its size
+pub struct FDTProp(pub usize, pub u32);
+
 #[derive(Error, Debug)]
 /// FDT error enum
 pub enum FDTError {
@@ -67,7 +72,7 @@ pub struct FDTReserveEntry {
 #[derive(Debug)]
 #[repr(C)]
 /// FDT Property
-pub struct FDTProp {
+pub struct FDTProperty {
     /// length of property
     length: u32,
     /// offset to property name in strings table
@@ -121,7 +126,7 @@ impl FDT {
 
     /// Find a certain node in the device tree
     /// Input for the [`look_for`] parameter is a URI-type thing
-    pub fn find_node(&mut self, look_for: &str) -> Result<usize> {
+    pub fn find_node(&mut self, look_for: &str) -> Result<FDTNode> {
         self.offset = self.base + self.header.as_mut().unwrap().off_dt_struct as usize;
         let target_depth = look_for.split('/').count();
         let mut current_depth: usize = 0;
@@ -131,6 +136,9 @@ impl FDT {
             match token {
                 0x1 => {
                     let name = self.read_nullterm_string()?;
+                    if name.is_empty() && look_for == "/" {
+                        return Ok(FDTNode(self.offset));
+                    }
                     if current_depth == matched_depth
                         && let Some(target_segment) = look_for
                             .split('/')
@@ -142,7 +150,7 @@ impl FDT {
                             matched_depth += 1; // We matched a step!
 
                             if matched_depth == target_depth {
-                                return Ok(self.offset);
+                                return Ok(FDTNode(self.offset));
                             }
                         }
                     }
@@ -173,8 +181,8 @@ impl FDT {
     }
 
     /// grab the property as a pointer
-    pub fn grab_property(&mut self, offset: usize, name: &str) -> Result<*mut u8> {
-        self.offset = offset;
+    pub fn grab_property(&mut self, node: FDTNode, name: &str) -> Result<FDTProp> {
+        self.offset = node.0;
         loop {
             let token = self.read_u32();
             match token {
@@ -185,13 +193,16 @@ impl FDT {
                     return Err(FDTError::PropLookupError);
                 },
                 0x3 => {
-                    let prop_header: FDTProp = FDTProp {
+                    let prop_header: FDTProperty = FDTProperty {
                         length: self.read_u32(),
                         name_offset: self.read_u32(),
                     };
                     let prop_name = self.grab_string(prop_header.name_offset)?;
                     if prop_name == name {
-                        return Ok(self.offset as *mut u8);
+                        return Ok(FDTProp(self.offset, prop_header.length));
+                    } else {
+                        self.offset += prop_header.length as usize;
+                        self.align();
                     }
                 },
                 0x4 => {},
@@ -201,6 +212,20 @@ impl FDT {
         }
 
         Err(FDTError::PropLookupError)
+    }
+
+    /// Gets the `#size-cells` property in the root node
+    pub fn grab_size_cells(&mut self) -> Result<u32> {
+        let root = self.find_node("/")?;
+        self.offset = self.grab_property(root, "#size-cells")?.0;
+        Ok(self.read_u32())
+    }
+
+    /// Gets the `#address-cells` property in the root node
+    pub fn grab_address_cells(&mut self) -> Result<u32> {
+        let root = self.find_node("/")?;
+        self.offset = self.grab_property(root, "#address-cells")?.0;
+        Ok(self.read_u32())
     }
 
     /// grab string from strings table
