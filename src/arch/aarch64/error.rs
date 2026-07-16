@@ -6,5 +6,5 @@ use thiserror::Error;
 pub enum ArchError {
     #[error(transparent)]
     /// FDT Error
-    FDT(#[from] super::fdt::FDTError)
+    FDT(#[from] super::fdt::FDTError),
 }

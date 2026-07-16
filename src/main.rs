@@ -6,10 +6,10 @@
 extern crate alloc;
 
 mod arch;
-mod malloc;
-mod scheduler;
+mod heap_alloc;
 mod uart;
 mod error;
+pub mod mmap;
 
 use core::{
     arch::global_asm,
@@ -17,7 +17,7 @@ use core::{
 };
 
 use crate::{
-    arch::karch_init, error::KernelError, malloc::LockedHeap,
+    arch::karch_init, error::KernelError, heap_alloc::LockedHeap,
 };
 
 global_asm!(include_str!("arch/aarch64/boot.S"));
@@ -26,8 +26,6 @@ global_asm!(include_str!("arch/aarch64/boot.S"));
 /// The global allocator static
 static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
-/// mem size
-static MEM_SIZE: spin::Once<usize> = spin::once::Once::new();
 
 unsafe extern "C" {
     /// The end of the program memory
@@ -40,13 +38,14 @@ unsafe extern "C" {
 /// Kernel entry point
 pub extern "C" fn kmain() -> ! {
     unsafe {
-        arch::karch_find_mem().unwrap();
-        karch_init().unwrap();
-        let program_end = core::ptr::addr_of!(_end) as usize;
-        let heap_start = (program_end + 7) & !7;
-        let heap_size = 16 * 1024 * 1024;
-        ALLOCATOR.init(heap_start, heap_size);
-
+        kprintln!("{:?}", core::ptr::addr_of!(_end));
+        // arch::karch_early_init().unwrap();
+        // karch_init().unwrap();
+        // let program_end = core::ptr::addr_of!(_end) as usize;
+        // let heap_start = (program_end + 7) & !7;
+        // let heap_size = 16 * 1024 * 1024;
+        // ALLOCATOR.init(heap_start, heap_size);
+        
         loop {
             core::arch::asm!("wfi");
         }
@@ -54,7 +53,7 @@ pub extern "C" fn kmain() -> ! {
 }
 
 /// Secondary core entry
-fn ksecond_entry() {
+fn ksecondary_entry() {
 
 }
 
