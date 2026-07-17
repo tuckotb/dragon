@@ -3,7 +3,7 @@
 use spin::Mutex;
 
 /// amount of entries to default to for memory map
-static MEMORYMAP_SIZE: usize = 128;
+const MEMORYMAP_SIZE: usize = 128;
 
 /// the public static for reserved memory locations
 pub static MEMORYMAP_PHYSMEM: Mutex<[Option<MemoryRegion>; 128]> = Mutex::new([None; MEMORYMAP_SIZE]);

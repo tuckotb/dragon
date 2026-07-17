@@ -38,8 +38,7 @@ unsafe extern "C" {
 /// Kernel entry point
 pub extern "C" fn kmain() -> ! {
     unsafe {
-        kprintln!("{:?}", core::ptr::addr_of!(_end));
-        // arch::karch_early_init().unwrap();
+        arch::karch_early_init().unwrap();
         // karch_init().unwrap();
         // let program_end = core::ptr::addr_of!(_end) as usize;
         // let heap_start = (program_end + 7) & !7;
