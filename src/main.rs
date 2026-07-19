@@ -6,18 +6,16 @@
 extern crate alloc;
 
 mod arch;
-mod heap_alloc;
 mod uart;
 mod error;
-pub mod mmap;
+mod mem;
 
 use core::{
-    arch::global_asm,
-    panic::PanicInfo,
+    arch::global_asm, panic::PanicInfo, ptr::addr_of,
 };
 
 use crate::{
-    arch::karch_init, error::KernelError, heap_alloc::LockedHeap,
+    arch::karch_init, error::KernelError, mem::{frame_alloc, heap_alloc::LockedHeap, mmap::MemoryRegion},
 };
 
 global_asm!(include_str!("arch/aarch64/boot.S"));
@@ -28,6 +26,8 @@ static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
 
 unsafe extern "C" {
+    /// Start of program memory
+    unsafe static _start: u8;
     /// The end of the program memory
     /// We store this so we know where to allocate our heap
     unsafe static _end: u8;
@@ -39,11 +39,14 @@ unsafe extern "C" {
 pub extern "C" fn kmain() -> ! {
     unsafe {
         arch::karch_early_init().unwrap();
-        // karch_init().unwrap();
-        // let program_end = core::ptr::addr_of!(_end) as usize;
-        // let heap_start = (program_end + 7) & !7;
-        // let heap_size = 16 * 1024 * 1024;
-        // ALLOCATOR.init(heap_start, heap_size);
+        arch::vector::init_exceptions();
+        let mut paging = frame_alloc::FrameAllocator::new();
+        let page1 = paging.alloc().unwrap();
+        let page2 = paging.alloc().unwrap();
+        let page3 = paging.alloc().unwrap();
+        paging.free(page2);
+        let page4 = paging.alloc().unwrap();
+        assert!(page2.0 == page4.0);
         
         loop {
             core::arch::asm!("wfi");
@@ -60,7 +63,7 @@ fn ksecondary_entry() {
 /// Kernel panic handler
 /// Prints the panic info and loops in `wfi`
 fn panic(info: &PanicInfo) -> ! {
-    kprintln!("PANIC:\n{}", info);
+    kprintln!("!!! PANIC !!!\n{}", info);
     loop {
         unsafe {
             core::arch::asm!("wfi");

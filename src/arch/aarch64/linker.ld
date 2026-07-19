@@ -3,6 +3,7 @@ ENTRY(_Reset)
 SECTIONS
 {
     . = 0x40000000;
+    _start = .;
     .text : { 
         *(.text .text.*) 
     }

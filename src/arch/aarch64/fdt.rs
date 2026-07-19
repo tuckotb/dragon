@@ -151,9 +151,9 @@ impl Cursor {
 /// FDT Reader
 pub struct FDT {
     /// base of fdt
-    base: usize,
+    pub base: usize,
     /// fdt header
-    header: FDTHeader,
+    pub header: FDTHeader,
 }
 
 impl FDT {
@@ -366,9 +366,16 @@ impl Iterator for Children<'_> {
             match token {
                 0x1 => {
                     self.depth += 1;
-                    let _ = self.cursor.read_nullterm_string();
+                    let name = self.cursor.read_nullterm_string().ok()?;
                     if !(self.depth > 1) {
-                        return Some(FDTNode(curr_offset));
+                        let name_no_addr = name.split('@').next().unwrap_or(name);
+                        if let Some(child_name) = self.child_name {
+                            if child_name == name_no_addr {
+                                return Some(FDTNode(curr_offset));
+                            }
+                        } else {
+                            return Some(FDTNode(curr_offset));
+                        }
                     }
                 }
                 0x2 => {

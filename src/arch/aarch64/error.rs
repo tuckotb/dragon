@@ -8,7 +8,11 @@ pub enum ArchError {
     /// FDT Error
     FDT(#[from] super::fdt::FDTError),
 
-    #[error("reg node did not exist when parsing memory structures")]
+    #[error("Reg node did not exist when parsing memory structure")]
     /// the reg node didnt exist when parsing a memory structure
-    RegNodeError
+    RegNodeError,
+
+    #[error("Reserved memory array ran out of regions")]
+    /// Reserved memory array ran out of regions
+    TooManyReservedRegions
 }
