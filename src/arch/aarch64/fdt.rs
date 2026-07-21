@@ -1,6 +1,8 @@
 //! An architecture-independent Flattened Device Tree (FDT) reader
 //! All memory locations are standerdized to `usize`
 
+// this needs to be upgraded to PhysAddr soon but I couldn't give a shit right now
+
 use core::ffi::{CStr, c_char};
 use thiserror::Error;
 

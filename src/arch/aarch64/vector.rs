@@ -1,7 +1,7 @@
 //! Setup an aarch64 vector table
 use core::arch::global_asm;
 
-use crate::{arch::aarch64::{trapframe::{self, TrapFrame}}, kprintln};
+use crate::{arch::aarch64::{trapframe::TrapFrame}, kprintln};
 
 global_asm!(
     r#"

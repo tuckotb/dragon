@@ -27,10 +27,10 @@ static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
 unsafe extern "C" {
     /// Start of program memory
-    unsafe static _start: u8;
+    unsafe static _kernel_start: u8;
     /// The end of the program memory
     /// We store this so we know where to allocate our heap
-    unsafe static _end: u8;
+    unsafe static _kernel_end: u8;
 }
 
 #[unsafe(no_mangle)]
@@ -38,16 +38,6 @@ unsafe extern "C" {
 /// Kernel entry point
 pub extern "C" fn kmain() -> ! {
     unsafe {
-        arch::karch_early_init().unwrap();
-        arch::vector::init_exceptions();
-        let mut paging = frame_alloc::FrameAllocator::new();
-        let page1 = paging.alloc().unwrap();
-        let page2 = paging.alloc().unwrap();
-        let page3 = paging.alloc().unwrap();
-        paging.free(page2);
-        let page4 = paging.alloc().unwrap();
-        assert!(page2.0 == page4.0);
-        
         loop {
             core::arch::asm!("wfi");
         }

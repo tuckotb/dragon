@@ -7,13 +7,13 @@ use crate::mem::mmap::MEMORYMAP_PHYSAVAIL;
 const PAGE_SIZE: usize = 4096;
 
 /// round up a page to 4kb
-fn round_page(addr: usize) -> usize {
-    (addr + (PAGE_SIZE - 1)) & !(PAGE_SIZE - 1)
+fn round_page(addr: PhysAddr) -> PhysAddr {
+    PhysAddr((addr.0 + (PAGE_SIZE - 1)) & !(PAGE_SIZE - 1))
 }
 
 /// round down an address to 4kb
-fn truncate_page(addr: usize) -> usize {
-    addr & !(PAGE_SIZE - 1)
+fn truncate_page(addr: PhysAddr) -> PhysAddr {
+    PhysAddr(addr.0 & !(PAGE_SIZE - 1))
 }
 
 /// A struct that is written to memory at the start of every free page to point to the next free page
@@ -45,13 +45,13 @@ impl FrameAllocator {
 
         for region in phys_avail.iter().flatten() {
             let base = round_page(region.base);
-            let end = truncate_page(region.base + region.size);
+            let end = truncate_page(PhysAddr(region.base.0 + region.size.0));
 
-            if end <= base {
+            if end.0 <= base.0 {
                 continue;
             }
 
-            for page in (base..end).step_by(PAGE_SIZE) {
+            for page in (base.0..end.0).step_by(PAGE_SIZE) {
                 let free_page = page as *mut FreePage;
 
                 unsafe {
