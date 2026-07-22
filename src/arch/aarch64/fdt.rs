@@ -6,8 +6,6 @@
 use core::ffi::{CStr, c_char};
 use thiserror::Error;
 
-use crate::kprintln;
-
 /// FDT error Result<T> type
 type Result<T> = core::result::Result<T, FDTError>;
 
@@ -103,7 +101,7 @@ impl Cursor {
     pub fn read_nullterm_string(&mut self) -> Result<&str> {
         let c_str = unsafe { CStr::from_ptr(self.offset as *mut c_char) };
         let len = c_str.to_bytes().len();
-        self.offset += len as usize;
+        self.offset += len;
         self.offset += 1;
         self.align();
         Ok(c_str.to_str()?)
@@ -321,8 +319,8 @@ impl FDT {
         &'a self,
         node: FDTNode,
         child_name: Option<&'a str>,
-    ) -> Result<Children<'_>> {
-        Ok(Children::new(node, self, child_name))
+    ) -> Result<Children<'a>> {
+        Ok(Children::new(node, child_name))
     }
 }
 
@@ -340,7 +338,7 @@ pub struct Children<'a> {
 
 impl<'a> Children<'a> {
     /// Create a new child iterator
-    pub fn new(node: FDTNode, fdt: &'a FDT, child_name: Option<&'a str>) -> Self {
+    pub fn new(node: FDTNode, child_name: Option<&'a str>) -> Self {
         let mut cursor = Cursor {
             offset: node.0,
         };

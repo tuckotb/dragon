@@ -1,7 +1,7 @@
 //! An ARM rich microkernel 
 #![no_std]
 #![no_main]
-#![allow(unsafe_op_in_unsafe_fn)]
+#![allow(unsafe_op_in_unsafe_fn, dead_code)]
 
 extern crate alloc;
 
@@ -11,14 +11,12 @@ mod error;
 mod mem;
 
 use core::{
-    arch::global_asm, panic::PanicInfo, ptr::addr_of,
+    arch::global_asm, panic::PanicInfo
 };
 
 use crate::{
-    arch::karch_init, error::KernelError, mem::{frame_alloc, heap_alloc::LockedHeap, mmap::MemoryRegion},
+    mem::{heap_alloc::LockedHeap},
 };
-
-global_asm!(include_str!("arch/aarch64/boot.S"));
 
 #[global_allocator]
 /// The global allocator static

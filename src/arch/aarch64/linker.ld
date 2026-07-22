@@ -1,12 +1,12 @@
 ENTRY(_reset)
 
-PHYS_BASE = 0x40000000;
+PHYS_BASE = 0x40100000;
 VIRT_OFFSET = 0xFFFF000000000000;
-VIRT_BASE = PHYS_BASE + VIRT_OFFSET;
+PAGE_GRANULE = 0x1000;
 
 SECTIONS
 {
-    . = 0x40000000;
+    . = PHYS_BASE;
     _start = .;
     .text : { 
         *(.text .text.*) 
@@ -15,7 +15,7 @@ SECTIONS
         *(.rodata .rodata.*) 
     }
     .data : { 
-        *(.data .data.*) 
+        *(.data .data.*) ms
     }
     . = ALIGN(16);
     __bss_start = .;

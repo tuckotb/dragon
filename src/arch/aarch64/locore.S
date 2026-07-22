@@ -1,3 +1,6 @@
+// include exception.S file
+.include "src/arch/aarch64/exception.S"
+
 // make sure our _reset function is available for the linker
 .global _reset
 
@@ -7,6 +10,11 @@
 // define statics/data in .bss and .data
 .section .bss
     FDT_POINTER: .space 8
+    .align 12 // maybe this needs to follow page_granule???
+    IDENTITY_L1: .space PAGE_GRANULE
+    IDENTITY_L2: .space PAGE_GRANULE
+    HIGHHALF_L1: .space PAGE_GRANULE
+    HIGHHALF_L2: .space PAGE_GRANULE
 
 // reset back to .text section
 .section .text
@@ -20,6 +28,9 @@
 
 // our entry point
 _reset:
+    // stupid qemu workaround
+    mov x0, #0x40000000
+
     // save the FDT pointer into register x19
     mov x19, x0
 
@@ -58,6 +69,9 @@ _reset:
     // Store FDT pointer into a global static
     str_l x19, FDT_POINTER, x0
 
+    // bring up vector tables
+    bl init_exceptions
+
     // initialize the mmu
     bl init_mmu 
 
@@ -69,6 +83,8 @@ _reset:
     
     // dead end loop to make sure we dont advance any further
     b .
+
+
 
 // todo: bring up the MMU with a higher-half kernel setup
 init_mmu:

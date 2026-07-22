@@ -1,6 +1,6 @@
 //! aarch64
 
-use core::ptr::addr_of;
+use core::arch::global_asm;
 
 use spin::Once;
 
@@ -13,6 +13,9 @@ pub mod fdt;
 pub mod trapframe;
 pub mod vector;
 
+
+global_asm!(include_str!("locore.S"));
+
 unsafe extern "C" {
     pub static FDT_POINTER: u64;
 }
@@ -23,6 +26,7 @@ pub static FDT: Once<FDT> = spin::Once::new();
 /// Early architecture specific initialization
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kinit_arm() {
+    kprintln!("{}", FDT_POINTER);
     let fdt = FDT::new(FDT_POINTER as usize).unwrap();
     FDT.call_once(|| fdt);
     let fdt = FDT.get().unwrap();
@@ -59,7 +63,7 @@ pub unsafe extern "C" fn kinit_arm() {
     if let Some(n) = node {
         let reserved_address_cells = fdt.get_address_cells(n).unwrap();
         let reserved_size_cells = fdt.get_size_cells(n).unwrap();
-        for (count, x) in fdt.children(n, None).unwrap().enumerate() {
+        for x in fdt.children(n, None).unwrap() {
             let Some(reg) = fdt.get_property(x, "reg").unwrap() else {
                 panic!("{}", ArchError::RegNodeError);
             };
