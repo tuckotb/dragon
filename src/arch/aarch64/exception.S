@@ -105,9 +105,15 @@ vector_stub irq_lower_aarch32, handle_irq
 vector_stub fiq_lower_aarch32, handle_fiq
 vector_stub serror_lower_aarch32, handle_serror
 
-init_exceptions:
+init_exceptions_lo:
     adrp x0, exception_vector_table
     add  x0, x0, :lo12:exception_vector_table
+    msr vbar_el1, x0
+    isb
+    ret
+
+init_exceptions:
+    ldr x0, =exception_vector_table
     msr vbar_el1, x0
     isb
     ret

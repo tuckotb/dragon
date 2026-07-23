@@ -26,7 +26,7 @@ pub static FDT: Once<FDT> = spin::Once::new();
 /// Early architecture specific initialization
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kinit_arm() {
-    kprintln!("{}", FDT_POINTER);
+    kprintln!("hello");
     let fdt = FDT::new(FDT_POINTER as usize).unwrap();
     FDT.call_once(|| fdt);
     let fdt = FDT.get().unwrap();
