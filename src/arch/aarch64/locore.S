@@ -15,8 +15,8 @@
 .section .bss
     FDT_POINTER: .space 8
     .align 12
-    KERNEL_L0: .space 4096
-    KERNEL_L1: .space 4096
+    BOOT_L0: .space 4096
+    BOOT_L1: .space 4096
     IDENTITY_L0: .space 4096
     IDENTITY_L1: .space 4096
 
@@ -100,11 +100,11 @@ _reset:
     and x10, x10, #0x1FF // ^^^^^
 
     mov x11, #3 // 0b11, valid, table entry
-    ldr x12, =KERNEL_L1 // address of L1
+    ldr x12, =BOOT_L1 // address of L1
     sub x12, x12, x14
     orr x11, x12, x11 // combine both
 
-    ldr x13, =KERNEL_L0 // load kernel l0 location into a register
+    ldr x13, =BOOT_L0 // load kernel l0 location into a register
     sub x13, x13, x14
     str x11, [x13, x10, lsl #3] // load the final result into the proper location
 
@@ -116,7 +116,7 @@ _reset:
     orr x11, x11, x13 // ^^^^^
     ldr x15, =PHYS_BASE
     orr x11, x15, x11 // combine address and descriptor bits
-    ldr x12, =KERNEL_L1 // load kernel_l1 addr into x12
+    ldr x12, =BOOT_L1 // load BOOT_L1 addr into x12
     sub x12, x12, x14
     str x11, [x12, x9, lsl #3] // store l1 entry into l1 table
 
@@ -155,7 +155,7 @@ _reset:
     orr x11, x11, x13 // ^^^^^
     ldr x15, =PHYS_BASE
     orr x11, x15, x11 // combine address and descriptor bits
-    ldr x12, =IDENTITY_L1 // load kernel_l1 addr into x12
+    ldr x12, =IDENTITY_L1 // load BOOT_L1 addr into x12
     sub x12, x12, x16
     str x11, [x12, x9, lsl #3] // store l1 entry into l1 table
 
@@ -163,7 +163,7 @@ _reset:
     msr mair_el1, x0
     isb
 
-    ldr x0, =KERNEL_L0
+    ldr x0, =BOOT_L0
     sub x0, x0, x16
     msr ttbr1_el1, x0
 
@@ -189,13 +189,8 @@ _reset:
 
     bl init_exceptions
 
-    mrs x0, tcr_el1
-    orr x0, x0, #(1 << 7) // disable ttbr0
-    msr tcr_el1, x0
-    isb
-
-    tlbi vmalle1is // invalidate ttbr0 and move on
-    dsb ish
-    isb
-
     bl kinit_arm
+
+    bl kmain
+
+    b .

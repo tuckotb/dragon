@@ -1,5 +1,4 @@
 //! mmu driver
 
-pub fn add_mmu_mapping() {
+use crate::mm::{PhysAddr, VirtAddr};
 
-}

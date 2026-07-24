@@ -1,34 +1,32 @@
 //! An ARM rich microkernel 
 #![no_std]
 #![no_main]
-#![allow(unsafe_op_in_unsafe_fn, dead_code)]
+#![allow(unsafe_op_in_unsafe_fn, dead_code, clippy::upper_case_acronyms)]
 
 extern crate alloc;
 
 mod arch;
-mod uart;
+mod log;
 mod error;
-mod mem;
+mod mm;
 
 use core::{
     arch::global_asm, panic::PanicInfo
 };
 
 use crate::{
-    mem::{heap_alloc::LockedHeap},
+    mm::{heap::LockedHeap},
 };
 
 #[global_allocator]
 /// The global allocator static
 static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
-
 unsafe extern "C" {
-    /// Start of program memory
-    unsafe static _kernel_start: u8;
-    /// The end of the program memory
-    /// We store this so we know where to allocate our heap
-    unsafe static _kernel_end: u8;
+    /// kernel start
+    pub static _start: u8;
+    /// kernel end
+    pub static _end: u8;
 }
 
 #[unsafe(no_mangle)]

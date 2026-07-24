@@ -1,7 +1,7 @@
 //! basic intrusive linked list allocator
 
-use crate::mem::PhysAddr;
-use crate::mem::mmap::MEMORYMAP_PHYSAVAIL;
+use crate::mm::PhysAddr;
+use crate::mm::mmap::MEMORYMAP_PHYSAVAIL;
 
 /// The size for each page
 const PAGE_SIZE: usize = 4096;
@@ -45,7 +45,7 @@ impl FrameAllocator {
 
         for region in phys_avail.iter().flatten() {
             let base = round_page(region.base);
-            let end = truncate_page(PhysAddr(region.base.0 + region.size.0));
+            let end = truncate_page(PhysAddr(region.base.0 + region.size));
 
             if end.0 <= base.0 {
                 continue;

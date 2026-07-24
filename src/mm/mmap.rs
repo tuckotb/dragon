@@ -2,7 +2,7 @@
 
 use spin::Mutex;
 
-use crate::mem::PhysAddr;
+use crate::mm::PhysAddr;
 
 /// amount of entries to default to for memory map
 pub const MEMORYMAP_SIZE: usize = 256;
@@ -19,7 +19,7 @@ pub struct MemoryRegion {
     /// Memory region base
     pub base: PhysAddr,
     /// Memory region size
-    pub size: PhysAddr
+    pub size: usize
 }
 
 
@@ -35,7 +35,7 @@ pub fn carve_region(
     // Iterate by index so we can safely mutate the array and insert new elements if a split occurs.
     for i in 0..phys_avail.len() {
         if let Some(mut region) = phys_avail[i] {
-            let reg_end = region.base.0 + region.size.0;
+            let reg_end = region.base.0 + region.size;
 
             // Check if there is any overlap at all
             if carve_base.0 < reg_end && carve_end > region.base.0 {
@@ -49,13 +49,13 @@ pub fn carve_region(
                     // Scenario 2: Start Overlap (Carve from the bottom)
                     // The carved area overlaps the beginning of this region.
                     region.base = PhysAddr(carve_end);
-                    region.size = PhysAddr(reg_end - carve_end);
+                    region.size = reg_end - carve_end;
                     phys_avail[i] = Some(region);
                     
                 } else if carve_end >= reg_end {
                     // Scenario 3: End Overlap (Carve from the top)
                     // The carved area overlaps the end of this region.
-                    region.size = PhysAddr(carve_base.0 - region.base.0);
+                    region.size = carve_base.0 - region.base.0;
                     phys_avail[i] = Some(region);
                     
                 } else {
@@ -64,13 +64,13 @@ pub fn carve_region(
                     // and create a new region starting at `carve_end`.
                     
                     // 1. Shrink the original region (Left side of the split)
-                    region.size = PhysAddr(carve_base.0 - region.base.0);
+                    region.size = carve_base.0 - region.base.0;
                     phys_avail[i] = Some(region);
 
                     // 2. Define the new region (Right side of the split)
                     let new_region = MemoryRegion {
                         base: PhysAddr(carve_end),
-                        size: PhysAddr(reg_end - carve_end),
+                        size: reg_end - carve_end,
                     };
 
                     // 3. Find an empty slot for the new region
