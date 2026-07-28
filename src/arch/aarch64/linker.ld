@@ -9,31 +9,29 @@ SECTIONS
 {
     . = KERNEL_BASE + VIRT_OFFSET;
     _start = .;
-
+    . = ALIGN(4096);
     .text : AT(ADDR(.text) - VIRT_OFFSET) { 
         *(.text .text.*) 
     }
-
+    . = ALIGN(4096);
     .rodata : AT(ADDR(.rodata) - VIRT_OFFSET) { 
         *(.rodata .rodata.*) 
     }
-
+    . = ALIGN(4096);
     .data : AT(ADDR(.data) - VIRT_OFFSET) { 
         *(.data .data.*)
     }
-
-    . = ALIGN(16);
+    . = ALIGN(4096);
     __bss_start = .;
     .bss : AT(ADDR(.bss) - VIRT_OFFSET) { 
         *(.bss .bss.* COMMON) 
     }
-    . = ALIGN(16);
-    
+    . = ALIGN(4096);
     __bss_end = .;
-
+    . = ALIGN(4096);
     . = . + 0x10000; 
     stack_top = .;
-
-    . = ALIGN(8);
+    . = ALIGN(4096);
     _end = .;
+    freemempos = .;
 }
