@@ -15,7 +15,7 @@
 .section .bss
     FDT_POINTER: .space 8
     .align 12
-    BOOT_L0: .space 4096
+    KERNEL_L0: .space 4096
     BOOT_L1: .space 4096
     IDENTITY_L0: .space 4096
     IDENTITY_L1: .space 4096
@@ -104,7 +104,7 @@ _reset:
     sub x12, x12, x14
     orr x11, x12, x11 // combine both
 
-    ldr x13, =BOOT_L0 // load kernel l0 location into a register
+    ldr x13, =KERNEL_L0 // load kernel l0 location into a register
     sub x13, x13, x14
     str x11, [x13, x10, lsl #3] // load the final result into the proper location
 
@@ -163,7 +163,7 @@ _reset:
     msr mair_el1, x0
     isb
 
-    ldr x0, =BOOT_L0
+    ldr x0, =KERNEL_L0
     sub x0, x0, x16
     msr ttbr1_el1, x0
 

@@ -1,8 +1,10 @@
 //! early memory handling
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use spin::{Mutex, RwLock};
 
-use crate::{_end, _start, arch::VIRT_OFFSET, mm::{PAGE_SIZE, PhysAddr, mmap::{MEMORYMAP_PHYSAVAIL, physavail_exclude_region}, pmm::round_page}};
+use crate::{_end, _start, arch::VIRT_OFFSET, mm::{PAGE_SIZE, PhysAddr, VirtAddr, mmap::{MEMORYMAP_PHYSAVAIL, physavail_exclude_region}, pmm::round_page}};
 
 /// emem start
 static EMEM_START: Mutex<PhysAddr> = Mutex::new(PhysAddr(0));
@@ -12,6 +14,9 @@ static EMEM_POINTER: Mutex<PhysAddr> = Mutex::new(PhysAddr(0));
 
 /// emem safe limit
 static EMEM_SAFE: RwLock<usize> = RwLock::new(0);
+
+/// is dmap enabled
+static EMEM_DMAP: AtomicBool = AtomicBool::new(false);
 
 /// initialize early memory system
 pub unsafe fn emem_init() {
@@ -32,12 +37,12 @@ pub unsafe fn emem_init() {
 
 /// switch to dmap system
 pub unsafe fn emem_dmap() {
-    emem_clean();
+    emem_flush();
     let mut emem_start = EMEM_START.lock();
     let mut emem_pointer = EMEM_POINTER.lock();
     let mut emem_safe = EMEM_SAFE.write();
-    let physavail = MEMORYMAP_PHYSAVAIL.lock();
 
+    let physavail = MEMORYMAP_PHYSAVAIL.lock();
     let mut size: usize = 0;
     for region in physavail.iter().flatten() {
         if region.size > size {
@@ -49,10 +54,12 @@ pub unsafe fn emem_dmap() {
             size = region.size;
         } 
     }
+
+    EMEM_DMAP.store(true, Ordering::Relaxed);
 }
 
 /// check if we exceeded any limits, if so, panic... what else can we do???
-pub fn emem_check_sanity() {
+fn emem_check_sanity() {
     let safe = EMEM_SAFE.read();
     let emem_pointer = EMEM_POINTER.lock();
     if *safe < emem_pointer.0 + PAGE_SIZE {
@@ -70,8 +77,17 @@ pub fn emem_alloc_page() -> PhysAddr {
 }
 
 /// log our previous emem usage
-pub fn emem_clean() {
+pub fn emem_flush() {
     let emem_start = EMEM_START.lock();
     let emem_pointer = EMEM_POINTER.lock();
     physavail_exclude_region(*emem_start, emem_pointer.0 - emem_start.0);
+}
+
+/// to dmap address
+pub fn emem_to_virt(address: PhysAddr) -> VirtAddr {
+    if EMEM_DMAP.load(Ordering::Relaxed) {
+        VirtAddr(address.0 + 0xFFFF_A000_0000_0000)
+    } else {
+        VirtAddr(address.0 + unsafe { VIRT_OFFSET } as usize)
+    }
 }
