@@ -2,6 +2,8 @@
 #![no_std]
 #![no_main]
 #![allow(unsafe_op_in_unsafe_fn, dead_code, clippy::upper_case_acronyms)]
+#![feature(const_convert)]
+#![feature(const_trait_impl)]
 
 extern crate alloc;
 
@@ -27,6 +29,26 @@ unsafe extern "C" {
     pub static _start: u8;
     /// kernel end
     pub static _end: u8;
+        /// bleh
+    pub static __text_start: u8;
+    /// bleh
+    pub static __text_end: u8;
+    /// bleh
+    pub static __rodata_start: u8;
+    /// bleh
+    pub static __rodata_end: u8;
+    /// bleh
+    pub static __data_start: u8;
+    /// bleh
+    pub static _data_end: u8;
+    /// bleh
+    pub static __bss_start: u8;
+    /// bleh
+    pub static __bss_end: u8;
+    /// bleh
+    pub static __stack_start: u8;
+    /// bleh
+    pub static __stack_end: u8;
 }
 
 #[unsafe(no_mangle)]

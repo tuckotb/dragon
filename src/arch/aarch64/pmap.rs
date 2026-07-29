@@ -1,6 +1,11 @@
 //! mmu driver
 
-use crate::mm::{PhysAddr, VirtAddr};
+use spin::Once;
+
+use crate::{arch::{VIRT_OFFSET, emem::emem_alloc_page}, mm::{PhysAddr, VirtAddr}};
+
+/// kernel l0 static
+static KERNEL_L0: Once<VirtAddr> = Once::new();
 
 impl VirtAddr {
     /// get l0 index
@@ -29,6 +34,11 @@ impl PageTableEntry {
         self.value = cleared_value | bounded_value;
     }
 
+    /// read bit helper
+    fn read_bit_field(&self, shift: u8, mask: u64) -> u64 {
+        (self.value >> shift) & mask
+    }
+
     /// set the mair for this entry
     pub fn set_attr_index(&mut self, mair: u64) {
         self.set_bit_field(2, 0b111, mair);
@@ -53,6 +63,21 @@ impl PageTableEntry {
     pub fn set_address(&mut self, addr: PhysAddr) {
         self.set_bit_field(12, 0x000F_FFFF_FFFF, addr.0 as u64);
     }
+
+    /// get the address of the entry
+    pub fn get_entry_address(&self) -> PhysAddr {
+        PhysAddr(self.read_bit_field(12, 0x000F_FFFF_FFFF) as usize)
+    }
+
+    /// check if the current entry is for a table
+    pub fn get_table(&self) -> bool {
+         self.read_bit_field(1, 1) != 0
+    }
+
+    /// check if the current entry is empty
+    pub fn is_empty(&self) -> bool {
+        self.value == 0
+    }
 }
 
 /// A single ARM page table
@@ -74,6 +99,13 @@ impl Mapper {
 }
 
 /// initialize the real kernel mappings
-fn pmap_init() {
+pub fn pmap_bootstrap() {
+    /// map ``start`` into fine 4kb blocks
+    unsafe fn map(start: VirtAddr, end: VirtAddr) {
+        
+    }
+    unsafe {
+        KERNEL_L0.call_once(emem_alloc_page);
 
+    }
 }

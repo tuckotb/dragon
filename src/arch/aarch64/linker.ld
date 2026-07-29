@@ -10,17 +10,23 @@ SECTIONS
     . = KERNEL_BASE + VIRT_OFFSET;
     _start = .;
     . = ALIGN(4096);
+    __text_start = .;
     .text : AT(ADDR(.text) - VIRT_OFFSET) { 
         *(.text .text.*) 
     }
+    __text_end = .;
     . = ALIGN(4096);
+    __rodata_start = .;
     .rodata : AT(ADDR(.rodata) - VIRT_OFFSET) { 
         *(.rodata .rodata.*) 
     }
+    __rodata_end = .;
     . = ALIGN(4096);
+    __data_start = .;
     .data : AT(ADDR(.data) - VIRT_OFFSET) { 
         *(.data .data.*)
     }
+    _data_end = .;
     . = ALIGN(4096);
     __bss_start = .;
     .bss : AT(ADDR(.bss) - VIRT_OFFSET) { 
@@ -29,9 +35,10 @@ SECTIONS
     . = ALIGN(4096);
     __bss_end = .;
     . = ALIGN(4096);
+    __stack_start = .;
     . = . + 0x10000; 
     stack_top = .;
+    __stack_end = .;
     . = ALIGN(4096);
     _end = .;
-    freemempos = .;
 }

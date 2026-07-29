@@ -1,19 +1,16 @@
 //! basic intrusive linked list allocator
 
-use crate::mm::PhysAddr;
+use crate::mm::{PAGE_SIZE, PhysAddr};
 use crate::mm::mmap::MEMORYMAP_PHYSAVAIL;
 
-/// The size for each page
-const PAGE_SIZE: usize = 4096;
-
 /// round up a page to 4kb
-fn round_page(addr: PhysAddr) -> PhysAddr {
-    PhysAddr((addr.0 + (PAGE_SIZE - 1)) & !(PAGE_SIZE - 1))
+pub fn round_page(addr: usize) -> usize {
+    (addr + (PAGE_SIZE - 1)) & !(PAGE_SIZE - 1)
 }
 
 /// round down an address to 4kb
-fn truncate_page(addr: PhysAddr) -> PhysAddr {
-    PhysAddr(addr.0 & !(PAGE_SIZE - 1))
+pub fn truncate_page(addr: usize) -> usize {
+    addr & !(PAGE_SIZE - 1)
 }
 
 /// A struct that is written to memory at the start of every free page to point to the next free page
@@ -44,8 +41,8 @@ impl FrameAllocator {
         };
 
         for region in phys_avail.iter().flatten() {
-            let base = round_page(region.base);
-            let end = truncate_page(PhysAddr(region.base.0 + region.size));
+            let base = PhysAddr(round_page(region.base.0));
+            let end = PhysAddr(truncate_page(region.base.0 + region.size));
 
             if end.0 <= base.0 {
                 continue;

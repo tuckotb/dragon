@@ -22,15 +22,13 @@ pub struct MemoryRegion {
     pub size: usize
 }
 
-
-/// Removes a specific physical memory range from the available memory map.
-/// Handles shrinking and splitting of existing regions.
-pub fn carve_region(
-    phys_avail: &mut [Option<MemoryRegion>; MEMORYMAP_SIZE],
+/// AI slop that works because I am NOT trying to write carving arithmetic :)))
+pub fn physavail_exclude_region(
     carve_base: PhysAddr,
-    carve_size: PhysAddr,
+    carve_size: usize,
 ) {
-    let carve_end = carve_base.0 + carve_size.0;
+    let mut phys_avail = MEMORYMAP_PHYSAVAIL.lock();
+    let carve_end = carve_base.0 + carve_size;
 
     // Iterate by index so we can safely mutate the array and insert new elements if a split occurs.
     for i in 0..phys_avail.len() {

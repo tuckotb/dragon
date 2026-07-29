@@ -5,20 +5,22 @@ use core::{arch::global_asm, ptr::addr_of};
 use spin::Once;
 
 use crate::{
-    _end, _start, arch::{error::ArchError, fdt::FDT}, kprintln, mm::{PhysAddr, mmap::{MEMORYMAP_PHYSAVAIL, MEMORYMAP_PHYSMEM, MemoryRegion, carve_region}},
+    _end, _start, arch::{emem::emem_init, error::ArchError, fdt::FDT, pmap::pmap_bootstrap}, kprintln, mm::{PhysAddr, mmap::{MEMORYMAP_PHYSAVAIL, MEMORYMAP_PHYSMEM, MemoryRegion, physavail_exclude_region}},
 };
 
 pub mod error;
 pub mod fdt;
 pub mod trapframe;
 pub mod vector;
-pub mod mmu;
+pub mod pmap;
+pub mod emem;
 
 
 global_asm!(include_str!("locore.S"));
 
 unsafe extern "C" {
     pub static FDT_POINTER: u64;
+    pub static VIRT_OFFSET: u64;
 }
 
 /// FDT
@@ -54,8 +56,9 @@ unsafe fn fdt_identify_memory() -> Result<(), ArchError> {
 
     let mut memorymap_physavail = MEMORYMAP_PHYSAVAIL.lock();
     *memorymap_physavail = *memorymap_physmem;
-    carve_region(&mut memorymap_physavail, PhysAddr(addr_of!(_start) as usize), PhysAddr(addr_of!(_end) as usize - addr_of!(_start) as usize));
-    carve_region(&mut memorymap_physavail, PhysAddr(fdt.base), PhysAddr(fdt.header.totalsize as usize));
+    drop(memorymap_physavail);
+    physavail_exclude_region( PhysAddr(addr_of!(_start) as usize), addr_of!(_end) as usize - addr_of!(_start) as usize);
+    physavail_exclude_region(PhysAddr(fdt.base), fdt.header.totalsize as usize);
     let node = fdt.find_node("/reserved-memory")?;
     if let Some(n) = node {
         let reserved_address_cells = fdt.get_address_cells(n)?;
@@ -68,7 +71,7 @@ unsafe fn fdt_identify_memory() -> Result<(), ArchError> {
             let address = cursor.read_stacked_u32(reserved_address_cells)?;
             let size = cursor.read_stacked_u32(reserved_size_cells)?;
             kprintln!("Carving memory: 0x{:X}, size of 0x{:X}", address, size);
-            carve_region(&mut memorymap_physavail, PhysAddr(address as usize), PhysAddr(size as usize));
+            physavail_exclude_region(PhysAddr(address as usize), size as usize);
         }
     } else {
         kprintln!("No reserved memory in FDT.");
@@ -82,6 +85,8 @@ pub unsafe extern "C" fn kinit_arm() {
     let fdt = FDT::new(FDT_POINTER as usize).unwrap();
     FDT.call_once(|| fdt);
     fdt_identify_memory().unwrap();
+    emem_init();
+    pmap_bootstrap();
 }
 
 /// architecture specific initialization

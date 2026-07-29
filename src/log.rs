@@ -11,7 +11,7 @@ const BUFFER_LENGTH: usize = 1024 * 1024; // 1MB message buffer
 /// Message buffer struct
 struct MessageBuffer {
     /// message buffer array
-    array: [u8; BUFFER_LENGTH],
+    array: [char; BUFFER_LENGTH],
     /// location in message buffer array
     location: usize
 }
@@ -20,7 +20,7 @@ impl MessageBuffer {
     /// initialize a message buffer
     pub const fn new() -> Self {
         Self {
-            array: [0; BUFFER_LENGTH],
+            array: ['\0'; BUFFER_LENGTH],
             location: 0
         }
     }
@@ -29,7 +29,7 @@ impl MessageBuffer {
 impl Write for MessageBuffer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for byte in s.bytes() {
-            self.array[self.location] = byte;
+            self.array[self.location] = byte.into();
             self.location += 1;
         }
         Ok(())
