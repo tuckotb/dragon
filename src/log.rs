@@ -11,7 +11,7 @@ const BUFFER_LENGTH: usize = 1024 * 1024; // 1MB message buffer
 /// Message buffer struct
 struct MessageBuffer {
     /// message buffer array
-    array: [char; BUFFER_LENGTH],
+    array: [u8; BUFFER_LENGTH],
     /// location in message buffer array
     location: usize
 }
@@ -20,7 +20,7 @@ impl MessageBuffer {
     /// initialize a message buffer
     pub const fn new() -> Self {
         Self {
-            array: ['\0'; BUFFER_LENGTH],
+            array: [0; BUFFER_LENGTH],
             location: 0
         }
     }

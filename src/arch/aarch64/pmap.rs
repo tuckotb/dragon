@@ -6,12 +6,21 @@ use core::ptr::{null, null_mut, write_bytes};
 
 use spin::Once;
 
-use crate::{arch::{VIRT_OFFSET, emem::{emem_alloc_page, emem_to_virt}}, mm::{PhysAddr, VirtAddr, mmap::MEMORYMAP_PHYSAVAIL}};
+use crate::{
+    arch::{
+        VIRT_OFFSET,
+        emem::{emem_alloc_page, emem_to_virt},
+    },
+    mm::{PhysAddr, VirtAddr, mmap::MEMORYMAP_PHYSAVAIL, round_align},
+};
 
 unsafe extern "C" {
     /// base kernel l0 map
     static mut KERNEL_L0: PageTable;
 }
+
+/// dmap offset
+pub const DMAP_OFFSET: usize = 0xFFFF_A000_0000_0000;
 
 /// l3 block size
 const L3_SIZE: usize = 4 * 1024;
@@ -22,13 +31,21 @@ const L1_SIZE: usize = 1024 * 1024 * 1024;
 
 impl VirtAddr {
     /// get l0 index
-    pub fn l0_index(&self) -> usize { (self.0 >> 39) & 0x1FF }
+    pub fn l0_index(&self) -> usize {
+        (self.0 >> 39) & 0x1FF
+    }
     /// get l1 index
-    pub fn l1_index(&self) -> usize { (self.0 >> 30) & 0x1FF }
+    pub fn l1_index(&self) -> usize {
+        (self.0 >> 30) & 0x1FF
+    }
     /// get l2 index
-    pub fn l2_index(&self) -> usize { (self.0 >> 21) & 0x1FF }
+    pub fn l2_index(&self) -> usize {
+        (self.0 >> 21) & 0x1FF
+    }
     /// get l3 index
-    pub fn l3_index(&self) -> usize { (self.0 >> 12) & 0x1FF }
+    pub fn l3_index(&self) -> usize {
+        (self.0 >> 12) & 0x1FF
+    }
 }
 
 /// A single ARM page table entry
@@ -36,7 +53,7 @@ impl VirtAddr {
 #[derive(Clone, Copy)]
 pub struct PageTableEntry {
     /// the page table value
-    value: u64
+    value: u64,
 }
 
 impl PageTableEntry {
@@ -52,7 +69,7 @@ impl PageTableEntry {
 
     /// set bit helper
     fn set_bit_field(&mut self, shift: u8, mask: u64, value: u64) {
-        let cleared_value = self.value & !(mask << shift);        
+        let cleared_value = self.value & !(mask << shift);
         let bounded_value = (value & mask) << shift;
         self.value = cleared_value | bounded_value;
     }
@@ -84,7 +101,7 @@ impl PageTableEntry {
 
     /// set the address in value
     pub fn set_address(&mut self, addr: PhysAddr) {
-        self.set_bit_field(12, 0x000F_FFFF_FFFF, addr.0 as u64);
+        self.set_bit_field(12, 0x000F_FFFF_FFFF, (addr.0 >> 12) as u64);
     }
 
     /// get the address of the entry
@@ -119,7 +136,9 @@ pub struct PageTable {
 impl PageTable {
     /// create new page table
     pub fn new() -> Self {
-        Self { entries: [PageTableEntry::default(); 512] }
+        Self {
+            entries: [PageTableEntry::default(); 512],
+        }
     }
 }
 
@@ -151,8 +170,8 @@ impl BootstrapMapper {
             // reset lower levels
             self.l2 = null_mut();
             self.l3 = null_mut();
-            self.l1_slot = 0;
-            self.l2_slot = 0;
+            self.l1_slot = usize::MAX;
+            self.l2_slot = usize::MAX;
 
             self.l0_slot = l0_slot;
 
@@ -185,7 +204,7 @@ impl BootstrapMapper {
         if l1_slot != self.l1_slot {
             // reset lower levels
             self.l3 = null_mut();
-            self.l2_slot = 0;
+            self.l2_slot = usize::MAX;
 
             self.l1_slot = l1_slot;
 
@@ -239,21 +258,121 @@ impl BootstrapMapper {
         }
     }
 
-    
+    /// map an l3 page
+    fn map_l3_page(&mut self, va: VirtAddr, pa: PhysAddr, attrs: u64) {
+        self.va = va;
+        self.pa = pa;
+
+        self.bootstrap_l2_table();
+
+        let slot = self.va.l3_index();
+        unsafe {
+            let entry = &mut (*self.l3).entries[slot];
+            debug_assert!(entry.is_empty());
+            entry.set_valid(true);
+            entry.set_table(true); // really this is set_page
+            entry.set_access_flag(true);
+            entry.set_address(pa);
+            entry.set_attr_index(attrs);
+            // set AP / SH / AttrIndx / UXN / PXN here
+            // entry.set_attr_index(...);
+        }
+    }
+
+    /// map a 2mb l2 block
+    fn map_l2_block(&mut self, va: VirtAddr, pa: PhysAddr, attrs: u64) {
+        self.va = va;
+        self.pa = pa;
+
+        self.bootstrap_l1_table();
+
+        let slot = self.va.l2_index();
+        unsafe {
+            let entry = &mut (*self.l2).entries[slot];
+            debug_assert!(entry.is_empty());
+            entry.set_valid(true);
+            entry.set_table(false);
+            entry.set_access_flag(true);
+            entry.set_address(pa);
+            entry.set_attr_index(attrs);
+            // set AP / SH / AttrIndx / UXN / PXN here
+        }
+    }
+
+    /// map a 1gb l1 block
+    fn map_l1_block(&mut self, va: VirtAddr, pa: PhysAddr, attrs: u64) {
+        self.va = va;
+        self.pa = pa;
+
+        self.bootstrap_l0_table();
+
+        let slot = self.va.l1_index();
+        unsafe {
+            let entry = &mut (*self.l1).entries[slot];
+            debug_assert!(entry.is_empty());
+            entry.set_valid(true);
+            entry.set_table(false);
+            entry.set_access_flag(true);
+            entry.set_address(pa);
+            entry.set_attr_index(attrs);
+        }
+    }
+
+    /// map a range with 2mb as preferred
+    pub fn map_range_2m_preferring_blocks(
+        &mut self,
+        start_pa: PhysAddr,
+        end_pa: PhysAddr,
+        dmap_offset: usize,
+        attrs: u64,
+    ) {
+        let mut pa = start_pa.0;
+        let mut va = start_pa.0 + dmap_offset;
+
+        // Head: align up to 2 MiB with 4 KiB pages
+        let head_end = round_align(pa, L2_SIZE).min(end_pa.0);
+        while pa < head_end {
+            self.map_l3_page(VirtAddr(va), PhysAddr(pa), attrs);
+            pa += L3_SIZE;
+            va += L3_SIZE;
+        }
+
+        // Middle: 2 MiB blocks
+        while pa + L2_SIZE <= end_pa.0 {
+            self.map_l2_block(VirtAddr(va), PhysAddr(pa), attrs);
+            pa += L2_SIZE;
+            va += L2_SIZE;
+        }
+
+        // Tail: remaining 4 KiB pages
+        while pa < end_pa.0 {
+            self.map_l3_page(VirtAddr(va), PhysAddr(pa), attrs);
+            pa += L3_SIZE;
+            va += L3_SIZE;
+        }
+    }
 }
 
 /// initialize the dmap
 pub fn pmap_bootstrap_dmap() {
+    let mut mapper: BootstrapMapper = BootstrapMapper {
+        l1: null_mut(),
+        l2: null_mut(),
+        l3: null_mut(),
+        l0_slot: usize::MAX,
+        l1_slot: usize::MAX,
+        l2_slot: usize::MAX,
+        va: VirtAddr(0xDEADBEEF),
+        pa: PhysAddr(0xDEADBEEF),
+    };
     let physavail = MEMORYMAP_PHYSAVAIL.lock();
-    for region in physavail.iter().flatten() {
 
+    for region in physavail.iter().flatten() {
+        mapper.map_range_2m_preferring_blocks(region.base, PhysAddr(region.base.0 + region.size), DMAP_OFFSET, 1);
     }
 }
 
 /// initialize the real kernel mappings
 pub fn pmap_bootstrap() {
-    unsafe {
-        
-
-    }
+    unsafe {}
 }

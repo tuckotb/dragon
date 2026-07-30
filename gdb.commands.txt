@@ -1,2 +1,8 @@
 set max-value-size unlimited
+set print pretty on
+set print array off
+set print elements unlimited
+
 target remote :1234
+
+alias log = x/s &dragon::log::MESSAGE_BUFFER.inner.data.value.array

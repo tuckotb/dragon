@@ -1,11 +1,11 @@
 //! aarch64
 
-use core::{arch::global_asm, ptr::addr_of};
+use core::{arch::global_asm, ptr::{addr_of, write_bytes}};
 
 use spin::Once;
 
 use crate::{
-    _end, _start, arch::{emem::emem_init, error::ArchError, fdt::FDT, pmap::pmap_bootstrap}, kprintln, mm::{PhysAddr, mmap::{MEMORYMAP_PHYSAVAIL, MEMORYMAP_PHYSMEM, MemoryRegion, physavail_exclude_region}},
+    _end, _start, arch::{emem::{emem_alloc_page, emem_dmap, emem_init, emem_to_virt}, error::ArchError, fdt::FDT, pmap::{pmap_bootstrap, pmap_bootstrap_dmap}}, kprintln, mm::{PhysAddr, mmap::{MEMORYMAP_PHYSAVAIL, MEMORYMAP_PHYSMEM, MemoryRegion, physavail_exclude_region}},
 };
 
 pub mod error;
@@ -20,8 +20,11 @@ global_asm!(include_str!("locore.S"));
 
 unsafe extern "C" {
     pub static FDT_POINTER: u64;
-    pub static VIRT_OFFSET: u64;
+    // pub static VIRT_OFFSET: u64;
 }
+
+/// voffset
+pub const VIRT_OFFSET: u64 = 0xFFFF_9000_0000_0000;
 
 /// FDT
 pub static FDT: Once<FDT> = spin::Once::new();
@@ -86,7 +89,8 @@ pub unsafe extern "C" fn kinit_arm() {
     FDT.call_once(|| fdt);
     fdt_identify_memory().unwrap();
     emem_init();
-    pmap_bootstrap();
+    pmap_bootstrap_dmap();
+    emem_dmap();
 }
 
 /// architecture specific initialization

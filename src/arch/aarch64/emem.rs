@@ -4,7 +4,15 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use spin::{Mutex, RwLock};
 
-use crate::{_end, _start, arch::VIRT_OFFSET, mm::{PAGE_SIZE, round_page, PhysAddr, VirtAddr, mmap::{MEMORYMAP_PHYSAVAIL, physavail_exclude_region}}};
+use crate::{
+    _end, _start,
+    arch::{VIRT_OFFSET, pmap::DMAP_OFFSET},
+    mm::{
+        PAGE_SIZE, PhysAddr, VirtAddr,
+        mmap::{MEMORYMAP_PHYSAVAIL, physavail_exclude_region},
+        round_page,
+    },
+};
 
 /// emem start
 static EMEM_START: Mutex<PhysAddr> = Mutex::new(PhysAddr(0));
@@ -44,22 +52,16 @@ pub unsafe fn emem_dmap() {
 
     let physavail = MEMORYMAP_PHYSAVAIL.lock();
     let mut size: usize = 0;
-    /*let largest = physavail
-    .iter()
-    .flatten()
-    .max_by_key(|region| region.size); */
-    for region in physavail.iter().flatten() {
-        if region.size > size {
-            // any rounding that loses memory space we just take as memory fragmentation, oh well...
-            let rounded = PhysAddr(round_page(region.base.0));
-            *emem_start = rounded;
-            *emem_pointer = rounded;
-            *emem_safe = region.base.0 + region.size;
-            size = region.size;
-        } 
-    }
-
-    EMEM_DMAP.store(true, Ordering::Relaxed);
+    let region = physavail
+        .iter()
+        .flatten()
+        .max_by_key(|region| region.size)
+        .expect("physavail should contain at least one available region");
+    let rounded = PhysAddr(round_page(region.base.0));
+    *emem_start = rounded;
+    *emem_pointer = rounded;
+    *emem_safe = region.base.0 + region.size;
+    EMEM_DMAP.store(true, Ordering::Release);
 }
 
 /// check if we exceeded any limits, if so, panic... what else can we do???
@@ -89,8 +91,8 @@ pub fn emem_flush() {
 
 /// to dmap address
 pub fn emem_to_virt(address: PhysAddr) -> VirtAddr {
-    if EMEM_DMAP.load(Ordering::Relaxed) {
-        VirtAddr(address.0 + 0xFFFF_A000_0000_0000)
+    if EMEM_DMAP.load(Ordering::Acquire) {
+        VirtAddr(address.0 + DMAP_OFFSET)
     } else {
         VirtAddr(address.0 + unsafe { VIRT_OFFSET } as usize)
     }

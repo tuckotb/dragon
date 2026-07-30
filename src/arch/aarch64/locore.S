@@ -7,6 +7,9 @@
 // make sure our FDT pointer is global for use in Rust
 .global FDT_POINTER
 
+// kernel l0 too
+.global KERNEL_L0
+
 .extern PHYS_BASE
 .extern VIRT_OFFSET
 .extern KERNEL_BASE

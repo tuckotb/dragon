@@ -14,12 +14,12 @@ pub const PAGE_SIZE: usize = 4096;
 pub static PHYSICAL_ALLOCATOR: Once<Mutex<pmm::FrameAllocator>> = Once::new();
 
 /// round up to an alignment target
-fn round_align(x: usize, align: usize) -> usize {
+pub fn round_align(x: usize, align: usize) -> usize {
     (x + align - 1) & !(align - 1)
 }
 
 /// round down to an alignment target
-fn truncate_align(x: usize, align: usize) -> usize {
+pub fn truncate_align(x: usize, align: usize) -> usize {
     x & !(align - 1)
 }
 
