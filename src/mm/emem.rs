@@ -5,12 +5,8 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use spin::{Mutex, RwLock};
 
 use crate::{
-    _end, _start,
-    arch::{VIRT_OFFSET, pmap::DMAP_OFFSET},
-    mm::{
-        PAGE_SIZE, PhysAddr, VirtAddr,
-        mmap::{MEMORYMAP_PHYSAVAIL, physavail_exclude_region},
-        round_page,
+    _end, _start, arch::MMU_BOOTSTRAP_SIZE, mm::{
+        DMAP_OFFSET, PAGE_SIZE, PhysAddr, VIRT_OFFSET, VirtAddr, mmap::{MEMORYMAP_PHYSAVAIL, physavail_exclude_region}, round_page
     },
 };
 
@@ -31,7 +27,7 @@ pub unsafe fn emem_init() {
     let start = PhysAddr(round_page(core::ptr::addr_of!(_end) as usize) - VIRT_OFFSET as usize);
     // we set a 1gb limit before we initialized the dmap because anything here will be using the macro
     // that converts to 0xFFFF9... which we only map as a 1gb L1 block in assembly!!!
-    let end = (core::ptr::addr_of!(_start) as usize - VIRT_OFFSET as usize) + 0x40000000;
+    let end = (core::ptr::addr_of!(_start) as usize - VIRT_OFFSET as usize) + MMU_BOOTSTRAP_SIZE;
 
     let mut emem_pointer = EMEM_POINTER.lock();
     *emem_pointer = start;
@@ -92,7 +88,7 @@ pub fn emem_flush() {
 /// to dmap address
 pub fn emem_to_virt(address: PhysAddr) -> VirtAddr {
     if EMEM_DMAP.load(Ordering::Acquire) {
-        VirtAddr(address.0 + DMAP_OFFSET)
+        address.to_dmap() // this is a little weird but i want to make sure code is consistent across files
     } else {
         VirtAddr(address.0 + unsafe { VIRT_OFFSET } as usize)
     }

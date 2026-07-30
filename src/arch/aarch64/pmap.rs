@@ -7,20 +7,13 @@ use core::ptr::{null, null_mut, write_bytes};
 use spin::Once;
 
 use crate::{
-    arch::{
-        VIRT_OFFSET,
-        emem::{emem_alloc_page, emem_to_virt},
-    },
-    mm::{PhysAddr, VirtAddr, mmap::MEMORYMAP_PHYSAVAIL, round_align},
+    mm::{DMAP_OFFSET, PhysAddr, VirtAddr, mmap::MEMORYMAP_PHYSAVAIL, round_align, emem::{emem_alloc_page, emem_to_virt}},
 };
 
 unsafe extern "C" {
     /// base kernel l0 map
     static mut KERNEL_L0: PageTable;
 }
-
-/// dmap offset
-pub const DMAP_OFFSET: usize = 0xFFFF_A000_0000_0000;
 
 /// l3 block size
 const L3_SIZE: usize = 4 * 1024;
