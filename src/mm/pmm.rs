@@ -1,17 +1,7 @@
 //! basic intrusive linked list allocator
 
-use crate::mm::{PAGE_SIZE, PhysAddr};
+use crate::mm::{PAGE_SIZE, PhysAddr, truncate_page, round_page};
 use crate::mm::mmap::MEMORYMAP_PHYSAVAIL;
-
-/// round up a page to 4kb
-pub fn round_page(addr: usize) -> usize {
-    (addr + (PAGE_SIZE - 1)) & !(PAGE_SIZE - 1)
-}
-
-/// round down an address to 4kb
-pub fn truncate_page(addr: usize) -> usize {
-    addr & !(PAGE_SIZE - 1)
-}
 
 /// A struct that is written to memory at the start of every free page to point to the next free page
 #[repr(C)]

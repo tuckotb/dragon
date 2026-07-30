@@ -2,7 +2,7 @@
 //! a lot of this stuff was inspired by freebsd arm64 pmap (sys/arm64/arm64/pmap.c)
 //! i highly recommend checking it out, great engineering behind it
 
-use core::ptr::{null, null_mut};
+use core::ptr::{null, null_mut, write_bytes};
 
 use spin::Once;
 
@@ -12,6 +12,13 @@ unsafe extern "C" {
     /// base kernel l0 map
     static mut KERNEL_L0: PageTable;
 }
+
+/// l3 block size
+const L3_SIZE: usize = 4 * 1024;
+/// l2 block size
+const L2_SIZE: usize = 2 * 1024 * 1024;
+/// l1 block size
+const L1_SIZE: usize = 1024 * 1024 * 1024;
 
 impl VirtAddr {
     /// get l0 index
@@ -82,7 +89,7 @@ impl PageTableEntry {
 
     /// get the address of the entry
     pub fn get_entry_address(&self) -> PhysAddr {
-        PhysAddr(self.read_bit_field(12, 0x000F_FFFF_FFFF) as usize)
+        PhysAddr((self.read_bit_field(12, 0x000F_FFFF_FFFF) << 12) as usize)
     }
 
     /// check if the current entry is for a table
@@ -150,17 +157,89 @@ impl BootstrapMapper {
             self.l0_slot = l0_slot;
 
             let l0_entry = unsafe { KERNEL_L0.entries[l0_slot] };
-            if !(l0_entry.is_valid() && l0_entry.is_table()) {
+            if l0_entry.is_valid() && l0_entry.is_table() {
+                let l1_pa = l0_entry.get_entry_address();
+                self.l1 = emem_to_virt(l1_pa).0 as *mut PageTable;
+            } else {
                 let l1_pa = emem_alloc_page();
+                let l1_va = emem_to_virt(l1_pa).0 as *mut PageTable;
+
                 unsafe {
+                    write_bytes(l1_va, 0, 1);
                     KERNEL_L0.entries[l0_slot].set_table(true);
                     KERNEL_L0.entries[l0_slot].set_valid(true);
                     KERNEL_L0.entries[l0_slot].set_address(l1_pa);
-                    self.l1 = emem_to_virt(l1_pa).0 as *mut PageTable;
+                    // add other stuff here for tlb shi
                 }
+
+                self.l1 = l1_va;
             }
         }
     }
+
+    /// bootstrap l1 table for writing
+    fn bootstrap_l1_table(&mut self) {
+        self.bootstrap_l0_table();
+
+        let l1_slot = self.va.l1_index();
+        if l1_slot != self.l1_slot {
+            // reset lower levels
+            self.l3 = null_mut();
+            self.l2_slot = 0;
+
+            self.l1_slot = l1_slot;
+
+            let l1_entry = unsafe { (*self.l1).entries[l1_slot] };
+            if l1_entry.is_valid() && l1_entry.is_table() {
+                let l2_pa = l1_entry.get_entry_address();
+                self.l2 = emem_to_virt(l2_pa).0 as *mut PageTable;
+            } else {
+                let l2_pa = emem_alloc_page();
+                let l2_va = emem_to_virt(l2_pa).0 as *mut PageTable;
+
+                unsafe {
+                    write_bytes(l2_va, 0, 1);
+                    (*self.l1).entries[l1_slot].set_table(true);
+                    (*self.l1).entries[l1_slot].set_valid(true);
+                    (*self.l1).entries[l1_slot].set_address(l2_pa);
+                    // add other stuff here for tlb shi
+                }
+
+                self.l2 = l2_va;
+            }
+        }
+    }
+
+    /// bootstrap l2 table for writing
+    fn bootstrap_l2_table(&mut self) {
+        self.bootstrap_l1_table();
+
+        let l2_slot = self.va.l2_index();
+        if l2_slot != self.l2_slot {
+            self.l2_slot = l2_slot;
+
+            let l2_entry = unsafe { (*self.l2).entries[l2_slot] };
+            if l2_entry.is_valid() && l2_entry.is_table() {
+                let l3_pa = l2_entry.get_entry_address();
+                self.l3 = emem_to_virt(l3_pa).0 as *mut PageTable;
+            } else {
+                let l3_pa = emem_alloc_page();
+                let l3_va = emem_to_virt(l3_pa).0 as *mut PageTable;
+
+                unsafe {
+                    write_bytes(l3_va, 0, 1);
+                    (*self.l2).entries[l2_slot].set_table(true);
+                    (*self.l2).entries[l2_slot].set_valid(true);
+                    (*self.l2).entries[l2_slot].set_address(l3_pa);
+                    // add other stuff here for tlb shi
+                }
+
+                self.l3 = l3_va;
+            }
+        }
+    }
+
+    
 }
 
 /// initialize the dmap

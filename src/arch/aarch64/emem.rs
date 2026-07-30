@@ -4,7 +4,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use spin::{Mutex, RwLock};
 
-use crate::{_end, _start, arch::VIRT_OFFSET, mm::{PAGE_SIZE, PhysAddr, VirtAddr, mmap::{MEMORYMAP_PHYSAVAIL, physavail_exclude_region}, pmm::round_page}};
+use crate::{_end, _start, arch::VIRT_OFFSET, mm::{PAGE_SIZE, round_page, PhysAddr, VirtAddr, mmap::{MEMORYMAP_PHYSAVAIL, physavail_exclude_region}}};
 
 /// emem start
 static EMEM_START: Mutex<PhysAddr> = Mutex::new(PhysAddr(0));
@@ -44,6 +44,10 @@ pub unsafe fn emem_dmap() {
 
     let physavail = MEMORYMAP_PHYSAVAIL.lock();
     let mut size: usize = 0;
+    /*let largest = physavail
+    .iter()
+    .flatten()
+    .max_by_key(|region| region.size); */
     for region in physavail.iter().flatten() {
         if region.size > size {
             // any rounding that loses memory space we just take as memory fragmentation, oh well...
