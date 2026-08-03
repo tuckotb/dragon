@@ -8,12 +8,17 @@ use core::{
 use spin::Once;
 
 use crate::{
-    _end, _start, arch::{
+    _end, _start,
+    arch::{
         error::ArchError,
         fdt::FDT,
-        pmap::{pmap_bootstrap, pmap_bootstrap_dmap},
-    }, kprintln, mm::{
-        PhysAddr, emem::{emem_dmap, emem_flush, emem_init}, mmap::{MEMORYMAP_PHYSAVAIL, MEMORYMAP_PHYSMEM, MemoryRegion, physavail_exclude_region},
+        pmap::{pmap_bootstrap, pmap_bootstrap_dmap, pmap_mapkernel},
+    },
+    kprintln,
+    mm::{
+        emem::{emem_dmap, emem_flush, emem_init},
+        mmap::{physavail_exclude_region, MemoryRegion, MEMORYMAP_PHYSAVAIL, MEMORYMAP_PHYSMEM},
+        PhysAddr, DMAP_OFFSET, VIRT_OFFSET,
     },
 };
 
@@ -37,8 +42,7 @@ pub const MMU_BOOTSTRAP_SIZE: usize = 1024 * 1024 * 1024;
 pub static FDT: Once<FDT> = spin::Once::new();
 
 /// Identify Memory from FDT
-unsafe fn fdt_identify_memory() -> Result<(), ArchError> {
-    let fdt = FDT.get().unwrap();
+unsafe fn fdt_identify_memory(fdt: &FDT) -> Result<(), ArchError> {
     let node = fdt.find_node("/")?;
     let mut memorymap_physmem = MEMORYMAP_PHYSMEM.lock();
     if let Some(n) = node {
@@ -102,28 +106,47 @@ unsafe fn fdt_identify_memory() -> Result<(), ArchError> {
 pub unsafe extern "C" fn kinit_arm() {
     // populate fdt global
     let fdt = FDT::new(FDT_POINTER as usize).unwrap();
-    FDT.call_once(|| fdt);
 
     // identify memory on the system and reserved memory, change this to be acpi/fdt agnostic
     // due to the kernel and fdt carves in there that should be done GLOBALLY no matter the platform
-    fdt_identify_memory().unwrap();
-    
+    fdt_identify_memory(&fdt).unwrap();
+
     // intialize early kernel pager
     emem_init();
-    
+
     // setup direct map
     pmap_bootstrap_dmap();
-    
+
+    // check if the dmap actually works...
+    if !(unsafe {
+        core::ptr::read_volatile((addr_of!(_end) as usize) as *mut u8)
+            == core::ptr::read_volatile(
+                (addr_of!(_end) as usize - VIRT_OFFSET as usize + DMAP_OFFSET) as *mut u8,
+            )
+    }) {
+        panic!("DMAP test failed");
+    }
+
     // transition emem to a directmap based system
     emem_dmap();
 
     // bootstrap kernel pmap entries to be fine grained
     pmap_bootstrap();
-    
+
+    // map fdt to virtual memory
+    let fdt_virtual_address = pmap_mapkernel(
+        PhysAddr(FDT_POINTER as usize),
+        PhysAddr(FDT_POINTER as usize + fdt.header.totalsize as usize),
+    );
+    let fdt = FDT::new(fdt_virtual_address.0).unwrap();
+    FDT.call_once(|| fdt);
+
     // flush emem, we're done with it
     emem_flush();
+    let fdt = FDT.get().unwrap();
+    kprintln!("{:?}", fdt.find_node("/").unwrap());
 
-    // "ret," return to assembly
+    // "ret" return to assembly
 }
 
 /// architecture specific initialization

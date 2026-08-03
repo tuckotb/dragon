@@ -1,24 +1,19 @@
-//! An ARM rich microkernel 
+//! An ARM rich microkernel
 #![no_std]
 #![no_main]
 #![allow(unsafe_op_in_unsafe_fn, dead_code, clippy::upper_case_acronyms)]
-#![feature(const_convert)]
-#![feature(const_trait_impl)]
+#![feature(breakpoint)]
 
 extern crate alloc;
 
 mod arch;
-mod log;
 mod error;
+mod log;
 mod mm;
 
-use core::{
-    arch::global_asm, panic::PanicInfo
-};
+use core::{arch::global_asm, panic::PanicInfo};
 
-use crate::{
-    mm::{heap::LockedHeap},
-};
+use crate::mm::heap::LockedHeap;
 
 #[global_allocator]
 /// The global allocator static
@@ -29,7 +24,7 @@ unsafe extern "C" {
     pub static _start: u8;
     /// kernel end
     pub static _end: u8;
-        /// bleh
+    /// bleh
     pub static __text_start: u8;
     /// bleh
     pub static __text_end: u8;
@@ -40,7 +35,7 @@ unsafe extern "C" {
     /// bleh
     pub static __data_start: u8;
     /// bleh
-    pub static _data_end: u8;
+    pub static __data_end: u8;
     /// bleh
     pub static __bss_start: u8;
     /// bleh
@@ -63,9 +58,7 @@ pub extern "C" fn kmain() -> ! {
 }
 
 /// Secondary core entry
-fn ksecondary_entry() {
-
-}
+fn ksecondary_entry() {}
 
 #[panic_handler]
 /// Kernel panic handler

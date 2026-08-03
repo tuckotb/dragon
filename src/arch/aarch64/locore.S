@@ -10,6 +10,9 @@
 // kernel l0 too
 .global KERNEL_L0
 
+// and l3 size for use in pmap
+.global L3_SIZE
+
 .extern PHYS_BASE
 .extern VIRT_OFFSET
 .extern KERNEL_BASE
@@ -22,6 +25,10 @@
     BOOT_L1: .space 4096
     IDENTITY_L0: .space 4096
     IDENTITY_L1: .space 4096
+    L3_SIZE: .quad 0
+
+.section .data
+    MMU_52_BIT_DESC: .quad 0
 
 // reset back to .text section
 .section .text
@@ -91,8 +98,11 @@ _reset:
     // Inner: Write-Back non-transient, Read and Write Allocate
     ldr x0, =0xFF
 
-    // 48-bit va, 4kb granule, inner/outer shareable cache
+    // 48-bit va (DS = 0), 4kb granule, inner/outer shareable cache
     ldr x1, =((5 << 32) | (2 << 30) | (3 << 28) | (3 << 26) | (3 << 24) | (16 << 16) | (16 << 0))
+    adrp x25, L3_SIZE
+    mov x24, #0x1000
+    str x24, [x25, #:lo12:L3_SIZE]
 
 
     // --- HIGHER HALF MAP ---

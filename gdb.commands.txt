@@ -1,3 +1,5 @@
+set auto-load safe-path /
+shell qemu-system-aarch64 -M virt -cpu cortex-a57 -smp 4 -m 4G -nographic -d int -s -S -kernel target/aarch64-unknown-none/debug/dragon &
 set max-value-size unlimited
 set print pretty on
 set print array off

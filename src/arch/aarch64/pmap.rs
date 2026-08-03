@@ -1,22 +1,30 @@
 //! mmu driver
 //! a lot of this stuff was inspired by freebsd arm64 pmap (sys/arm64/arm64/pmap.c)
 //! i highly recommend checking it out, great engineering behind it
+//!
+//! also arm ref:
+//! https://support.arm.com/documentation/ddi0487/mc/-Part-D-The-AArch64-System-Level-Architecture/-Chapter-D8-The-AArch64-Virtual-Memory-System-Architecture/-D8-3-Translation-table-descriptor-formats/-D8-3-1-VMSAv8-64-descriptor-formats?lang=en
 
-use core::ptr::{null, null_mut, write_bytes};
-
-use spin::Once;
+use core::{
+    arch::asm,
+    ptr::{addr_of, null_mut, write_bytes},
+};
 
 use crate::{
-    mm::{DMAP_OFFSET, PhysAddr, VirtAddr, mmap::MEMORYMAP_PHYSAVAIL, round_align, emem::{emem_alloc_page, emem_to_virt}},
+    __bss_end, __bss_start, __data_end, __data_start, __rodata_end, __rodata_start, __stack_end,
+    __stack_start, __text_end, __text_start, _end, _start,
+    mm::{
+        emem::{emem_alloc_page, emem_to_virt},
+        mmap::MEMORYMAP_PHYSAVAIL,
+        round_align, PhysAddr, VirtAddr, DMAP_OFFSET, VIRT_OFFSET,
+    },
 };
 
 unsafe extern "C" {
-    /// base kernel l0 map
     static mut KERNEL_L0: PageTable;
+    static L3_SIZE: usize;
 }
 
-/// l3 block size
-const L3_SIZE: usize = 4 * 1024;
 /// l2 block size
 const L2_SIZE: usize = 2 * 1024 * 1024;
 /// l1 block size
@@ -38,6 +46,45 @@ impl VirtAddr {
     /// get l3 index
     pub fn l3_index(&self) -> usize {
         (self.0 >> 12) & 0x1FF
+    }
+}
+
+/// Configuration for page table entry attributes
+#[derive(Clone, Copy, Debug)]
+pub struct PageAttributes {
+    /// Memory Attribute Indirection Register (MAIR) index
+    pub mair_idx: u64,
+    /// Access Permissions (AP)
+    pub ap: u64,
+    /// Shareability (SH)
+    pub sh: u64,
+    /// Privileged Execute Never (EL1)
+    pub pxn: bool,
+    /// Unprivileged Execute Never (EL0)
+    pub uxn: bool,
+}
+
+impl PageAttributes {
+    /// A quick default for standard kernel memory (R/W, Inner Shareable, No Execute)
+    pub fn kernel_data(mair_idx: u64) -> Self {
+        Self {
+            mair_idx,
+            ap: 0b00,  // EL1 R/W, EL0 None
+            sh: 0b11,  // Inner Shareable
+            pxn: true, // No kernel execution
+            uxn: true, // No user execution
+        }
+    }
+
+    /// A quick default for kernel code (R-X)
+    pub fn kernel_code(mair_idx: u64) -> Self {
+        Self {
+            mair_idx,
+            ap: 0b10,   // EL1 Read-Only, EL0 None
+            sh: 0b11,   // Inner Shareable
+            pxn: false, // Allow kernel execution
+            uxn: true,  // No user execution
+        }
     }
 }
 
@@ -116,6 +163,22 @@ impl PageTableEntry {
     pub fn is_empty(&self) -> bool {
         self.value == 0
     }
+
+    pub fn set_ap(&mut self, ap: u64) {
+        self.set_bit_field(6, 0b11, ap);
+    }
+
+    pub fn set_sh(&mut self, sh: u64) {
+        self.set_bit_field(8, 0b11, sh);
+    }
+
+    pub fn set_pxn(&mut self, value: bool) {
+        self.set_bit_field(53, 1, value as u64);
+    }
+
+    pub fn set_uxn(&mut self, value: bool) {
+        self.set_bit_field(54, 1, value as u64);
+    }
 }
 
 /// A single ARM page table
@@ -156,6 +219,25 @@ struct BootstrapMapper {
 }
 
 impl BootstrapMapper {
+    /// new/default bootstrap mapper
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// new/default bootstrap mapper
+    pub fn default() -> Self {
+        BootstrapMapper {
+            l1: null_mut(),
+            l2: null_mut(),
+            l3: null_mut(),
+            l0_slot: usize::MAX,
+            l1_slot: usize::MAX,
+            l2_slot: usize::MAX,
+            va: VirtAddr(0xDEADBEEF),
+            pa: PhysAddr(0xDEADBEEF),
+        }
+    }
+
     /// bootstrap l0 table for writing
     fn bootstrap_l0_table(&mut self) {
         let l0_slot = self.va.l0_index();
@@ -252,7 +334,7 @@ impl BootstrapMapper {
     }
 
     /// map an l3 page
-    fn map_l3_page(&mut self, va: VirtAddr, pa: PhysAddr, attrs: u64) {
+    fn map_l3_page(&mut self, va: VirtAddr, pa: PhysAddr, attrs: &PageAttributes) {
         self.va = va;
         self.pa = pa;
 
@@ -266,14 +348,16 @@ impl BootstrapMapper {
             entry.set_table(true); // really this is set_page
             entry.set_access_flag(true);
             entry.set_address(pa);
-            entry.set_attr_index(attrs);
-            // set AP / SH / AttrIndx / UXN / PXN here
-            // entry.set_attr_index(...);
+            entry.set_attr_index(attrs.mair_idx);
+            entry.set_ap(attrs.ap);
+            entry.set_sh(attrs.sh);
+            entry.set_pxn(attrs.pxn);
+            entry.set_uxn(attrs.uxn);
         }
     }
 
     /// map a 2mb l2 block
-    fn map_l2_block(&mut self, va: VirtAddr, pa: PhysAddr, attrs: u64) {
+    fn map_l2_block(&mut self, va: VirtAddr, pa: PhysAddr, attrs: &PageAttributes) {
         self.va = va;
         self.pa = pa;
 
@@ -287,13 +371,16 @@ impl BootstrapMapper {
             entry.set_table(false);
             entry.set_access_flag(true);
             entry.set_address(pa);
-            entry.set_attr_index(attrs);
-            // set AP / SH / AttrIndx / UXN / PXN here
+            entry.set_attr_index(attrs.mair_idx);
+            entry.set_ap(attrs.ap);
+            entry.set_sh(attrs.sh);
+            entry.set_pxn(attrs.pxn);
+            entry.set_uxn(attrs.uxn);
         }
     }
 
     /// map a 1gb l1 block
-    fn map_l1_block(&mut self, va: VirtAddr, pa: PhysAddr, attrs: u64) {
+    fn map_l1_block(&mut self, va: VirtAddr, pa: PhysAddr, attrs: &PageAttributes) {
         self.va = va;
         self.pa = pa;
 
@@ -307,7 +394,11 @@ impl BootstrapMapper {
             entry.set_table(false);
             entry.set_access_flag(true);
             entry.set_address(pa);
-            entry.set_attr_index(attrs);
+            entry.set_attr_index(attrs.mair_idx);
+            entry.set_ap(attrs.ap);
+            entry.set_sh(attrs.sh);
+            entry.set_pxn(attrs.pxn);
+            entry.set_uxn(attrs.uxn);
         }
     }
 
@@ -316,56 +407,172 @@ impl BootstrapMapper {
         &mut self,
         start_pa: PhysAddr,
         end_pa: PhysAddr,
-        dmap_offset: usize,
-        attrs: u64,
+        offset: usize,
+        attrs: PageAttributes,
     ) {
         let mut pa = start_pa.0;
-        let mut va = start_pa.0 + dmap_offset;
+        let mut va = start_pa.0 + offset;
+        let l3_size = unsafe { L3_SIZE };
+        if !(pa.is_multiple_of(l3_size) && va.is_multiple_of(l3_size)) {
+            panic!(
+                "tried mapping a range that was not aligned to the current l3_size: {}",
+                l3_size
+            );
+        }
 
         // Head: align up to 2 MiB with 4 KiB pages
         let head_end = round_align(pa, L2_SIZE).min(end_pa.0);
         while pa < head_end {
-            self.map_l3_page(VirtAddr(va), PhysAddr(pa), attrs);
-            pa += L3_SIZE;
-            va += L3_SIZE;
+            self.map_l3_page(VirtAddr(va), PhysAddr(pa), &attrs);
+            pa += l3_size;
+            va += l3_size;
         }
 
         // Middle: 2 MiB blocks
         while pa + L2_SIZE <= end_pa.0 {
-            self.map_l2_block(VirtAddr(va), PhysAddr(pa), attrs);
+            self.map_l2_block(VirtAddr(va), PhysAddr(pa), &attrs);
             pa += L2_SIZE;
             va += L2_SIZE;
         }
 
         // Tail: remaining 4 KiB pages
         while pa < end_pa.0 {
-            self.map_l3_page(VirtAddr(va), PhysAddr(pa), attrs);
-            pa += L3_SIZE;
-            va += L3_SIZE;
+            self.map_l3_page(VirtAddr(va), PhysAddr(pa), &attrs);
+            pa += l3_size;
+            va += l3_size;
         }
     }
 }
 
+/// tell the cpu to reload the tables
+unsafe fn pmap_reload_tables(address: Option<VirtAddr>) {
+    asm!("dsb ishst");
+    if let Some(vaddr) = address {
+        asm!("tlbi vae1is, {}", in(reg) (vaddr.0 >> 12));
+    } else {
+        asm!("tlbi vmalle1is");
+    }
+    asm!("dsb ish");
+    asm!("isb");
+}
+
 /// initialize the dmap
 pub fn pmap_bootstrap_dmap() {
-    let mut mapper: BootstrapMapper = BootstrapMapper {
-        l1: null_mut(),
-        l2: null_mut(),
-        l3: null_mut(),
-        l0_slot: usize::MAX,
-        l1_slot: usize::MAX,
-        l2_slot: usize::MAX,
-        va: VirtAddr(0xDEADBEEF),
-        pa: PhysAddr(0xDEADBEEF),
-    };
+    let mut mapper: BootstrapMapper = BootstrapMapper::default();
     let physavail = MEMORYMAP_PHYSAVAIL.lock();
 
     for region in physavail.iter().flatten() {
-        mapper.map_range_2m_preferring_blocks(region.base, PhysAddr(region.base.0 + region.size), DMAP_OFFSET, 1);
+        mapper.map_range_2m_preferring_blocks(
+            region.base,
+            PhysAddr(region.base.0 + region.size),
+            DMAP_OFFSET,
+            PageAttributes {
+                mair_idx: 0,
+                ap: 0b00,
+                sh: 0b11,
+                pxn: true,
+                uxn: true,
+            },
+        );
+    }
+
+    unsafe {
+        pmap_reload_tables(None);
     }
 }
 
 /// initialize the real kernel mappings
 pub fn pmap_bootstrap() {
-    unsafe {}
+    let mut mapper: BootstrapMapper = BootstrapMapper::default();
+    let text_start = PhysAddr(addr_of!(__text_start) as usize - VIRT_OFFSET as usize);
+    let text_end = PhysAddr(addr_of!(__text_end) as usize - VIRT_OFFSET as usize);
+    let rodata_start = PhysAddr(addr_of!(__rodata_start) as usize - VIRT_OFFSET as usize);
+    let rodata_end = PhysAddr(addr_of!(__rodata_end) as usize - VIRT_OFFSET as usize);
+    let data_start = PhysAddr(addr_of!(__data_start) as usize - VIRT_OFFSET as usize);
+    let data_end = PhysAddr(addr_of!(__data_end) as usize - VIRT_OFFSET as usize);
+    let bss_start = PhysAddr(addr_of!(__bss_start) as usize - VIRT_OFFSET as usize);
+    let bss_end = PhysAddr(addr_of!(__bss_end) as usize - VIRT_OFFSET as usize);
+    let stack_start = PhysAddr(addr_of!(__stack_start) as usize - VIRT_OFFSET as usize);
+    let stack_end = PhysAddr(addr_of!(__stack_end) as usize - VIRT_OFFSET as usize);
+    mapper.map_range_2m_preferring_blocks(
+        text_start,
+        text_end,
+        VIRT_OFFSET as usize,
+        PageAttributes {
+            mair_idx: 0,
+            ap: 0b10,
+            sh: 0b11,
+            pxn: false,
+            uxn: true,
+        },
+    );
+    mapper.map_range_2m_preferring_blocks(
+        rodata_start,
+        rodata_end,
+        VIRT_OFFSET as usize,
+        PageAttributes {
+            mair_idx: 0,
+            ap: 0b10,
+            sh: 0b11,
+            pxn: true,
+            uxn: true,
+        },
+    );
+    mapper.map_range_2m_preferring_blocks(
+        data_start,
+        data_end,
+        VIRT_OFFSET as usize,
+        PageAttributes {
+            mair_idx: 0,
+            ap: 0b00,
+            sh: 0b11,
+            pxn: true,
+            uxn: true,
+        },
+    );
+    mapper.map_range_2m_preferring_blocks(
+        bss_start,
+        bss_end,
+        VIRT_OFFSET as usize,
+        PageAttributes {
+            mair_idx: 0,
+            ap: 0b00,
+            sh: 0b11,
+            pxn: true,
+            uxn: true,
+        },
+    );
+    mapper.map_range_2m_preferring_blocks(
+        stack_start,
+        stack_end,
+        VIRT_OFFSET as usize,
+        PageAttributes {
+            mair_idx: 0,
+            ap: 0b00,
+            sh: 0b11,
+            pxn: true,
+            uxn: true,
+        },
+    );
+    unsafe {
+        pmap_reload_tables(None);
+    }
+}
+
+/// maps things into the kernel address space
+pub fn pmap_mapkernel(start: PhysAddr, end: PhysAddr) -> VirtAddr {
+    let mut mapper: BootstrapMapper = BootstrapMapper::default();
+    mapper.map_range_2m_preferring_blocks(
+        start,
+        end,
+        VIRT_OFFSET as usize,
+        PageAttributes {
+            mair_idx: 0,
+            ap: 0b00,
+            sh: 0b11,
+            pxn: true,
+            uxn: true,
+        },
+    );
+    VirtAddr(VIRT_OFFSET as usize + start.0)
 }

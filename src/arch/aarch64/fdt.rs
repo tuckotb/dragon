@@ -10,10 +10,10 @@ use thiserror::Error;
 type Result<T> = core::result::Result<T, FDTError>;
 
 /// An FDT node
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct FDTNode(pub usize);
 /// An FDT property alongside its size
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct FDTProp(pub usize, pub u32);
 
 #[derive(Error, Debug)]

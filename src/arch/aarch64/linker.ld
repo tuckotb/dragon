@@ -26,7 +26,7 @@ SECTIONS
     .data : AT(ADDR(.data) - VIRT_OFFSET) { 
         *(.data .data.*)
     }
-    _data_end = .;
+    __data_end = .;
     . = ALIGN(4096);
     __bss_start = .;
     .bss : AT(ADDR(.bss) - VIRT_OFFSET) { 
@@ -35,6 +35,7 @@ SECTIONS
     . = ALIGN(4096);
     __bss_end = .;
     . = ALIGN(4096);
+    . = . + 0x1000; /* this is here so if the stack overflows, itll trigger a page exception :P */
     __stack_start = .;
     . = . + 0x10000; 
     stack_top = .;
